@@ -19,7 +19,7 @@ localstack_image="${LOCALSTACK_IMAGE:-localstack/localstack:4}"
 bin="$repo/target/debug/transcdr"
 [ -x "$bin.exe" ] && bin="$bin.exe"
 
-mkdir -p "$state/storage"
+mkdir -p "$state/storage" "$state/plugin-cache"
 rm -f "$state/transcdr.sqlite"*
 
 if [ ! -x "$bin" ] || [ -n "${BUILD:-}" ]; then
@@ -63,5 +63,7 @@ export TF_ACC=1
 export TRANSCDR_BASE_URL=http://localhost:$port
 export TRANSCDR_API_KEY=$key
 export TRANSCDR_LOCALSTACK_URL=http://localhost:4566
+# One download of each provider for every test working directory.
+export TF_PLUGIN_CACHE_DIR=$state/plugin-cache
 ENV
 echo "Ready. source $state/env"
