@@ -25,6 +25,9 @@ func projectJSON(api, user any) any {
 		for k, uv := range u {
 			if av, ok := a[k]; ok {
 				out[k] = projectJSON(av, uv)
+			} else if uv == nil {
+				// The API leaves out fields that are null (a rendition's label or bitrate).
+				out[k] = nil
 			}
 		}
 		return out

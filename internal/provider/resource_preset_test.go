@@ -1,0 +1,113 @@
+package provider
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func testAccCBRPreset(name, description, quality string) string {
+	return configHeader(false) + fmt.Sprintf(`
+resource "transcdr_preset" "test" {
+  name        = %q
+  description = %q
+  output = jsonencode({
+    mode            = "hls"
+    codec           = "h264"
+    segment_seconds = 4
+    quality         = %s
+    renditions = [
+      { width = 1920, height = 1080, bitrate = "6M" },
+      { width = 1280, height = 720 },
+    ]
+  })
+  metadata = { tier = "broadcast" }
+}
+`, name, description, quality)
+}
+
+func TestAccPreset_cbr(t *testing.T) {
+	name := acctest.RandomWithPrefix("tfacc")
+	r := "transcdr_preset.test"
+	var id string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProviders,
+		CheckDestroy:             checkGone("transcdr_preset", "/v1/presets/"),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCBRPreset(name, "Constant bit rate", `{ target = "cbr", bitrate = "4M", buffer_ms = 1500 }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr(r, "id", regexp.MustCompile(`^pre_`)),
+					resource.TestCheckResourceAttr(r, "slug", name),
+					resource.TestCheckResourceAttr(r, "metadata.tier", "broadcast"),
+					// The resolved spec has the defaults filled in; output stays as written.
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"target":"cbr"`)),
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"color":"sdr"`)),
+					resource.TestCheckResourceAttrWith(r, "id", capture(&id)),
+				),
+			},
+			{
+				ResourceName:      r,
+				ImportState:       true,
+				ImportStateVerify: true,
+				// An import has only the resolved spec to go on.
+				ImportStateVerifyIgnore: []string{"output"},
+			},
+			// A changed value updates in place.
+			{
+				Config: testAccCBRPreset(name, "Constant bit rate, 5M", `{ target = "cbr", bitrate = "5M", buffer_ms = 1500 }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(r, "id", same(&id)),
+					resource.TestCheckResourceAttr(r, "description", "Constant bit rate, 5M"),
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"bitrate":"5M"`)),
+				),
+			},
+			// Drift: the preset changed outside Terraform.
+			{
+				PreConfig: func() {
+					id := stateID(t, "transcdr_preset", name)
+					body := map[string]any{"output": map[string]any{"quality": map[string]any{"bitrate": "9M"}}}
+					if err := testClient().Patch(context.Background(), "/v1/presets/"+id, body, nil); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:             testAccCBRPreset(name, "Constant bit rate, 5M", `{ target = "cbr", bitrate = "5M", buffer_ms = 1500 }`),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			// A removed field replaces the preset: an update would merge and keep it.
+			{
+				Config: testAccCBRPreset(name, "Constant bit rate, 5M", `{ target = "cbr", bitrate = "5M" }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(r, "id", differs(&id)),
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"bitrate":"5M"`)),
+					resource.TestCheckResourceAttr(r, "slug", name),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPreset_invalidSpec(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				// A rate without constant bit rate is refused; the API's message comes through.
+				Config: configHeader(false) + `
+resource "transcdr_preset" "bad" {
+  name   = "tfacc invalid"
+  output = jsonencode({ quality = { target = "high", bitrate = "5M" } })
+}
+`,
+				ExpectError: regexp.MustCompile(`(?s)Could not create the preset.*HTTP 422`),
+			},
+		},
+	})
+}
