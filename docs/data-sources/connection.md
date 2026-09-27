@@ -13,11 +13,14 @@ A connection by id or by name, e.g. one made in the dashboard, to use as an auto
 ## Example Usage
 
 ```terraform
-# A connection made in the dashboard.
+# A connection made outside this configuration (in the dashboard, or by
+# another team's Terraform), looked up by its exact name. Use `id` instead
+# when names are not unique. Secrets are never returned.
 data "transcdr_connection" "ingest" {
   name = "Ingest bucket"
 }
 
+# Watch it without managing it here.
 resource "transcdr_automation" "watch" {
   name   = "Watch ingest"
   source = { connection_id = data.transcdr_connection.ingest.id }

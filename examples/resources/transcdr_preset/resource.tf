@@ -1,7 +1,9 @@
-# Constant bit rate HLS: each rung at its own rate, or quality.bitrate.
+# Constant bit rate HLS: each rung at its own rate, or quality.bitrate, held
+# within a 1.5 s buffer. Write only the fields you want: the rest come from
+# the defaults, and the full result is in resolved_output.
 resource "transcdr_preset" "cbr_broadcast" {
   name        = "Broadcast CBR 1080p"
-  slug        = "broadcast-cbr-1080p"
+  slug        = "broadcast-cbr-1080p" # optional; made from the name when omitted
   description = "H.264 HLS at constant bit rates."
   output = jsonencode({
     mode    = "hls"
@@ -9,19 +11,21 @@ resource "transcdr_preset" "cbr_broadcast" {
     quality = { target = "cbr", bitrate = "3M", buffer_ms = 1500 }
     renditions = [
       { width = 1920, height = 1080, bitrate = "6M" },
-      { width = 1280, height = 720 },
+      { width = 1280, height = 720 }, # takes quality.bitrate
     ]
   })
 }
 
-# An automatic ladder at a quality level.
+# An automatic ABR ladder up to 1080p, coded to a quality level rather than a
+# rate. Changing a value updates the preset in place; removing a field you had
+# set replaces it (a new id; the slug carries over).
 resource "transcdr_preset" "av1_ladder" {
   name = "AV1 ladder"
   output = jsonencode({
     mode    = "hls"
     codec   = "av1"
     ladder  = { max_short_side = 1080 }
-    quality = { target = "high" }
+    quality = { target = "high" } # visually_lossless | high | standard | low | vmaf=N
   })
   metadata = { team = "web" }
 }
