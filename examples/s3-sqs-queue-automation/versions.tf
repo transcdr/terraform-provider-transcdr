@@ -8,8 +8,8 @@
 #                      Transcdr signs in as.
 #   hashicorp/time     one short wait, so brand-new IAM access keys work before
 #                      Transcdr tries them (see time_sleep.iam in main.tf).
-#   transcdr/transcdr  the connections, the automation and the event
-#                      destination on the Transcdr side.
+#   transcdr/transcdr  the connections, the preset, the automation and the
+#                      event destination on the Transcdr side.
 #
 # Versions are pinned to a major release: `~> 6.0` accepts 6.x but not 7.0.
 
@@ -47,6 +47,6 @@ provider "aws" {
 # the configuration keeps it out of version control; you can still set
 # `api_key = var.transcdr_api_key` here if you prefer a sensitive variable.
 #
-# The key needs these scopes: connections:write, automations:write and
-# webhooks:write (or `*`).
+# The key needs these scopes: connections:write, presets:write,
+# automations:write and webhooks:write (or `*`).
 provider "transcdr" {}

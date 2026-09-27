@@ -8,7 +8,8 @@
 #   2. S3 sends an "object created" event notification to the SQS queue
 #      (aws_s3_bucket_notification.media, allowed by aws_sqs_queue_policy).
 #   3. Transcdr reads the queue with the IAM user created here, finds the new
-#      file, and starts a job with var.preset (transcdr_automation.ingest).
+#      file, and starts a job with this pipeline's own preset
+#      (transcdr_automation.ingest, transcdr_preset.delivery).
 #   4. When the job completes, Transcdr writes the outputs back to the same
 #      bucket under var.output_prefix, e.g. transcoded/talk/.
 #   5. Transcdr publishes job.completed (or job.failed) to the SNS topic,
@@ -23,7 +24,7 @@
 #
 #   bucket -> queues -> generated policies -> queue policy -> notification
 #          -> SNS topic -> IAM user and key -> Transcdr connections
-#          -> automation -> event destination
+#          -> preset -> automation -> event destination
 
 # -----------------------------------------------------------------------------
 # The bucket
@@ -258,6 +259,36 @@ resource "transcdr_connection" "queue" {
 }
 
 # -----------------------------------------------------------------------------
+# Transcdr: the preset
+# -----------------------------------------------------------------------------
+
+# How every file is transcoded: an HLS ladder in var.codec. `output` is the
+# part of the output specification you care about; everything else takes the
+# API's defaults, which `resolved_output` shows. Changing it later updates the
+# preset in place, and a field you remove goes back to its default.
+#
+# To use a system preset instead, drop this resource and set the automation's
+# `preset` to a slug such as "hls-av1-abr".
+resource "transcdr_preset" "delivery" {
+  name        = "${var.name} delivery"
+  description = "HLS ladder for ${var.name}, managed by Terraform"
+
+  output = jsonencode({
+    mode  = "hls"
+    codec = var.codec
+    renditions = [
+      { width = 1920, height = 1080 },
+      { width = 1280, height = 720 },
+      { width = 854, height = 480 },
+    ]
+  })
+
+  metadata = {
+    pipeline = var.name
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Transcdr: the automation
 # -----------------------------------------------------------------------------
 
@@ -281,14 +312,16 @@ resource "transcdr_automation" "ingest" {
     pattern       = var.pattern
   }
 
-  # How: a system preset or a preset id. To change a few settings of the
-  # preset, add `output = jsonencode({ codec = "h264" })`: those fields are
-  # merged over the preset's.
-  preset = var.preset
+  # How: the preset above, by id (a system preset slug also works). To change
+  # a few settings for this automation only, add
+  # `output = jsonencode({ segment_seconds = 4 })`: those fields are merged
+  # over the preset's.
+  preset = transcdr_preset.delivery.id
 
   # Where: back into the bucket, under the output template. Leave the whole
   # block out to keep outputs in Transcdr's own storage and download them
-  # through the API instead.
+  # through the API instead; removing it later stops delivery from the next
+  # job on, without replacing the automation.
   destination = {
     connection_id = transcdr_connection.bucket.id
     prefix        = var.output_prefix

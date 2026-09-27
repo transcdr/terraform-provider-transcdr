@@ -51,14 +51,19 @@ variable "pattern" {
   default     = "**/*.{mp4,mov,mkv,webm,m4v}"
 }
 
-variable "preset" {
+variable "codec" {
   description = <<-EOT
-    How each file is transcoded: a system preset slug such as "hls-av1-abr"
-    (an AV1 HLS ladder), "hls-h264-abr" or "web-av1-1080p", or the id of one
-    of your own presets (a transcdr_preset resource's id).
+    The video codec of the pipeline's preset (transcdr_preset.delivery):
+    "h264" plays everywhere, "av1" is about half the size at the same quality
+    on current devices.
   EOT
   type        = string
-  default     = "hls-av1-abr"
+  default     = "h264"
+
+  validation {
+    condition     = contains(["h264", "h265", "av1"], var.codec)
+    error_message = "codec must be h264, h265 or av1."
+  }
 }
 
 variable "output_prefix" {

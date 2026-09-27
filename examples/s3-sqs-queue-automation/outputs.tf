@@ -20,6 +20,11 @@ output "automation_id" {
   value       = transcdr_automation.ingest.id
 }
 
+output "preset_id" {
+  description = "The pipeline's preset (pre_…). Jobs you start by hand can use it too: {\"preset\": \"<id>\"}."
+  value       = transcdr_preset.delivery.id
+}
+
 output "queue_url" {
   description = "The trigger queue. If a file never becomes a job, look at the dead-letter queue next to it."
   value       = aws_sqs_queue.triggers.url
