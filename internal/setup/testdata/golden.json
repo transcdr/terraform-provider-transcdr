@@ -1,0 +1,922 @@
+{
+  "functions": [
+    {
+      "fn": "normalizeRoot",
+      "args": [
+        "videos/"
+      ],
+      "out": "videos/"
+    },
+    {
+      "fn": "normalizeRoot",
+      "args": [
+        "/videos"
+      ],
+      "out": "videos/"
+    },
+    {
+      "fn": "normalizeRoot",
+      "args": [
+        "  //a/b  "
+      ],
+      "out": "a/b/"
+    },
+    {
+      "fn": "normalizeRoot",
+      "args": [
+        ""
+      ],
+      "out": ""
+    },
+    {
+      "fn": "queueRegion",
+      "args": [
+        "https://sqs.eu-west-1.amazonaws.com/123456789012/ingest"
+      ],
+      "out": "eu-west-1"
+    },
+    {
+      "fn": "queueRegion",
+      "args": [
+        "https://sqs-fips.us-east-1.amazonaws.com/123456789012/q"
+      ],
+      "out": ""
+    },
+    {
+      "fn": "queueRegion",
+      "args": [
+        "http://localhost:4566/000000000000/q"
+      ],
+      "out": ""
+    },
+    {
+      "fn": "queueArn",
+      "args": [
+        " https://sqs.us-east-1.amazonaws.com/123456789012/media-ingest.fifo "
+      ],
+      "out": "arn:aws:sqs:us-east-1:123456789012:media-ingest.fifo"
+    },
+    {
+      "fn": "queueArn",
+      "args": [
+        "http://localhost:4566/000000000000/q"
+      ],
+      "out": ""
+    },
+    {
+      "fn": "topicRegion",
+      "args": [
+        "arn:aws:sns:ap-southeast-2:123456789012:uploads"
+      ],
+      "out": "ap-southeast-2"
+    },
+    {
+      "fn": "topicRegion",
+      "args": [
+        "nope"
+      ],
+      "out": ""
+    },
+    {
+      "fn": "arnAccount",
+      "args": [
+        "arn:aws-cn:sns:cn-north-1:123456789012:uploads"
+      ],
+      "out": "123456789012"
+    },
+    {
+      "fn": "arnAccount",
+      "args": [
+        "arn:aws:s3:::bucket"
+      ],
+      "out": ""
+    },
+    {
+      "fn": "isTopicArn",
+      "args": [
+        "arn:aws:sns:us-east-1:123456789012:media-uploads"
+      ],
+      "out": "true"
+    },
+    {
+      "fn": "isTopicArn",
+      "args": [
+        "arn:aws:sns:us-east-1:123456789012:media.fifo"
+      ],
+      "out": "true"
+    },
+    {
+      "fn": "isTopicArn",
+      "args": [
+        "arn:aws:sns:us-east-1:12345:media"
+      ],
+      "out": "false"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "media-in",
+        "videos/",
+        null,
+        false
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"videos/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/videos/*\"}]}"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "",
+        "",
+        null,
+        false
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::<your-bucket>\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::<your-bucket>/*\"}]}"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "media-in",
+        "",
+        [
+          "source"
+        ],
+        false
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "media-in",
+        "/in",
+        [
+          "source",
+          "watch_folder"
+        ],
+        true
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"in/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:DeleteObject\"],\"Resource\":\"arn:aws:s3:::media-in/in/*\"}]}"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "media-in",
+        "in",
+        [
+          "source",
+          "destination"
+        ],
+        false
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"in/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/in/*\"}]}"
+    },
+    {
+      "fn": "s3PolicyTemplate",
+      "args": [
+        "<b>&co",
+        "a&b",
+        [
+          "source"
+        ],
+        true
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::<b>&co\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"a&b/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:DeleteObject\"],\"Resource\":\"arn:aws:s3:::<b>&co/a&b/*\"}]}"
+    },
+    {
+      "fn": "sqsQueueSetup",
+      "args": [
+        "https://sqs.us-east-1.amazonaws.com/123456789012/ingest",
+        "",
+        "",
+        ""
+      ],
+      "out": {
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy_for_s3": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::YOUR-BUCKET\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "queue_policy_for_sns": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:us-east-1:123456789012:YOUR-TOPIC\"}}}]}"
+      }
+    },
+    {
+      "fn": "sqsQueueSetup",
+      "args": [
+        "https://sqs.us-east-1.amazonaws.com/123456789012/ingest",
+        "",
+        " media-in ",
+        " arn:aws:sns:us-east-1:123456789012:t "
+      ],
+      "out": {
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy_for_s3": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "queue_policy_for_sns": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:us-east-1:123456789012:t\"}}}]}"
+      }
+    },
+    {
+      "fn": "sqsQueueSetup",
+      "args": [
+        "http://localhost:4566/000000000000/q",
+        "",
+        "media-in",
+        ""
+      ],
+      "out": {
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:<region>:<account-id>:<queue>\"}]}",
+        "queue_policy_for_s3": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:<region>:<account-id>:<queue>\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"<account-id>\"}}}]}",
+        "queue_policy_for_sns": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:<region>:<account-id>:<queue>\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:<region>:<account-id>:YOUR-TOPIC\"}}}]}"
+      }
+    },
+    {
+      "fn": "sqsQueueSetup",
+      "args": [
+        "http://localhost:4566/000000000000/q",
+        "eu-central-1",
+        "",
+        ""
+      ],
+      "out": {
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:eu-central-1:<account-id>:<queue>\"}]}",
+        "queue_policy_for_s3": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:eu-central-1:<account-id>:<queue>\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::YOUR-BUCKET\"},\"StringEquals\":{\"aws:SourceAccount\":\"<account-id>\"}}}]}",
+        "queue_policy_for_sns": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:eu-central-1:<account-id>:<queue>\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:eu-central-1:<account-id>:YOUR-TOPIC\"}}}]}"
+      }
+    },
+    {
+      "fn": "consumerPolicy",
+      "args": [
+        "https://sqs.us-west-2.amazonaws.com/210987654321/transcdr"
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-west-2:210987654321:transcdr\"}]}"
+    },
+    {
+      "fn": "queueAccessPolicy",
+      "args": [
+        "https://sqs.us-east-1.amazonaws.com/123456789012/ingest",
+        "media-in",
+        ""
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}"
+    },
+    {
+      "fn": "queueAccessPolicy",
+      "args": [
+        "https://sqs.us-east-1.amazonaws.com/123456789012/ingest",
+        "",
+        "arn:aws:sns:us-east-1:123456789012:uploads"
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:us-east-1:123456789012:uploads\"}}}]}"
+    },
+    {
+      "fn": "topicPolicyForS3",
+      "args": [
+        "arn:aws:sns:us-east-1:123456789012:uploads",
+        "media-in"
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:123456789012:uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}"
+    },
+    {
+      "fn": "topicPolicyForS3",
+      "args": [
+        "arn:aws:sns:us-east-1:uploads",
+        "media-in"
+      ],
+      "out": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"}}}]}"
+    },
+    {
+      "fn": "notificationPrefix",
+      "args": [
+        "videos",
+        "/incoming"
+      ],
+      "out": "videos/incoming/"
+    },
+    {
+      "fn": "notificationPrefix",
+      "args": [
+        "",
+        ""
+      ],
+      "out": ""
+    },
+    {
+      "fn": "patternExtensions",
+      "args": [
+        "*.mp4"
+      ],
+      "out": "[\"mp4\"]"
+    },
+    {
+      "fn": "patternExtensions",
+      "args": [
+        "**/*.{mp4,mov,MP4,mov}"
+      ],
+      "out": "[\"mp4\",\"mov\",\"MP4\"]"
+    },
+    {
+      "fn": "patternExtensions",
+      "args": [
+        "**/*"
+      ],
+      "out": "[]"
+    },
+    {
+      "fn": "patternExtensions",
+      "args": [
+        "incoming/*.{mp4"
+      ],
+      "out": "[]"
+    },
+    {
+      "fn": "notificationFilters",
+      "args": [
+        "incoming/",
+        "*.mp4"
+      ],
+      "out": "{\"filters\":[{\"prefix\":\"incoming/\",\"suffix\":\".mp4\"}],\"bySuffix\":true,\"note\":\"One configuration, under incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.\"}"
+    },
+    {
+      "fn": "notificationFilters",
+      "args": [
+        "incoming/",
+        "**/*.{mp4,mov,mov}"
+      ],
+      "out": "{\"filters\":[{\"prefix\":\"incoming/\",\"suffix\":\".mp4\"},{\"prefix\":\"incoming/\",\"suffix\":\".mov\"}],\"bySuffix\":true,\"note\":\"2 configurations, one per extension, under incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.\"}"
+    },
+    {
+      "fn": "notificationFilters",
+      "args": [
+        "",
+        "**/*.{MOV,mp4}"
+      ],
+      "out": "{\"filters\":[{\"prefix\":\"\",\"suffix\":\".MOV\"},{\"prefix\":\"\",\"suffix\":\".mp4\"}],\"bySuffix\":true,\"note\":\"2 configurations, one per extension. S3 suffix filters are case-sensitive: a file named .MOV is not sent.\"}"
+    },
+    {
+      "fn": "notificationFilters",
+      "args": [
+        "incoming/",
+        "**/*"
+      ],
+      "out": "{\"filters\":[{\"prefix\":\"incoming/\",\"suffix\":\"\"}],\"bySuffix\":false,\"note\":\"The pattern **/* has no simple suffix, so the notification filters on the prefix only. The automation's pattern skips the other files.\"}"
+    },
+    {
+      "fn": "notificationFilters",
+      "args": [
+        "",
+        "  "
+      ],
+      "out": "{\"filters\":[{\"prefix\":\"\",\"suffix\":\"\"}],\"bySuffix\":false,\"note\":\"The pattern (none) has no simple suffix, so the notification filters on the prefix only (here: every new object). The automation's pattern skips the other files.\"}"
+    },
+    {
+      "fn": "bucketNotification",
+      "args": [
+        "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "",
+        "incoming/",
+        "**/*.{mp4,mov}"
+      ],
+      "out": "{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}"
+    },
+    {
+      "fn": "bucketNotification",
+      "args": [
+        "",
+        "arn:aws:sns:us-east-1:123456789012:uploads",
+        "",
+        "*.mkv"
+      ],
+      "out": "{\"TopicConfigurations\":[{\"Id\":\"transcdr-mkv\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mkv\"}]}}}]}"
+    },
+    {
+      "fn": "bucketNotification",
+      "args": [
+        "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "",
+        "",
+        "**/*"
+      ],
+      "out": "{\"QueueConfigurations\":[{\"Id\":\"transcdr\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"]}]}"
+    },
+    {
+      "fn": "bucketNotification",
+      "args": [
+        "",
+        "arn:aws:sns:us-east-1:123456789012:uploads",
+        "videos/in/",
+        "**/*"
+      ],
+      "out": "{\"TopicConfigurations\":[{\"Id\":\"transcdr\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"videos/in/\"}]}}}]}"
+    },
+    {
+      "fn": "shellQuote",
+      "args": [
+        "media-in"
+      ],
+      "out": "media-in"
+    },
+    {
+      "fn": "shellQuote",
+      "args": [
+        "my bucket"
+      ],
+      "out": "'my bucket'"
+    },
+    {
+      "fn": "shellQuote",
+      "args": [
+        "it's"
+      ],
+      "out": "'it'\\''s'"
+    },
+    {
+      "fn": "shellQuote",
+      "args": [
+        ""
+      ],
+      "out": "''"
+    },
+    {
+      "fn": "putBucketNotificationCommand",
+      "args": [
+        "media-in",
+        "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "",
+        "incoming/",
+        "**/*.{mp4,mov}",
+        "us-east-1"
+      ],
+      "out": "aws s3api put-bucket-notification-configuration --bucket media-in --region us-east-1 \\\n  --notification-configuration '{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}'"
+    },
+    {
+      "fn": "putBucketNotificationCommand",
+      "args": [
+        "it's a bucket",
+        "",
+        "arn:aws:sns:us-east-1:123456789012:up",
+        "Keynote 2026/",
+        "*.mp4",
+        ""
+      ],
+      "out": "aws s3api put-bucket-notification-configuration --bucket 'it'\\''s a bucket' \\\n  --notification-configuration '{\"TopicConfigurations\":[{\"Id\":\"transcdr-mp4\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:up\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"Keynote 2026/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}}]}'"
+    },
+    {
+      "fn": "setQueuePolicyCommand",
+      "args": [
+        " https://sqs.us-east-1.amazonaws.com/123456789012/ingest ",
+        "media-in"
+      ],
+      "out": "aws sqs set-queue-attributes --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/ingest --region us-east-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"S3SendsObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"s3.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:us-east-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnLike\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:s3:::media-in\\\"},\\\"StringEquals\\\":{\\\"aws:SourceAccount\\\":\\\"123456789012\\\"}}}]}\"}'"
+    },
+    {
+      "fn": "setQueuePolicyCommand",
+      "args": [
+        "http://localhost:4566/000000000000/q",
+        "o'brien"
+      ],
+      "out": "aws sqs set-queue-attributes --queue-url http://localhost:4566/000000000000/q \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"S3SendsObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"s3.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:<region>:<account-id>:<queue>\\\",\\\"Condition\\\":{\\\"ArnLike\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:s3:::o'\\''brien\\\"},\\\"StringEquals\\\":{\\\"aws:SourceAccount\\\":\\\"<account-id>\\\"}}}]}\"}'"
+    },
+    {
+      "fn": "setTopicPolicyCommand",
+      "args": [
+        "arn:aws:sns:eu-west-1:123456789012:uploads",
+        "media-in"
+      ],
+      "out": "aws sns set-topic-attributes --topic-arn arn:aws:sns:eu-west-1:123456789012:uploads --region eu-west-1 \\\n  --attribute-name Policy --attribute-value '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:eu-west-1:123456789012:uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}'"
+    },
+    {
+      "fn": "snsSubscribeCommand",
+      "args": [
+        "arn:aws:sns:eu-west-1:123456789012:uploads",
+        "sqs",
+        "arn:aws:sqs:eu-west-1:123456789012:ingest"
+      ],
+      "out": "aws sns subscribe --topic-arn arn:aws:sns:eu-west-1:123456789012:uploads --region eu-west-1 \\\n  --protocol sqs --notification-endpoint arn:aws:sqs:eu-west-1:123456789012:ingest"
+    },
+    {
+      "fn": "snsSubscribeCommand",
+      "args": [
+        "arn:aws:sns:eu-west-1:123456789012:uploads",
+        "https",
+        " https://api.transcdr.com/v1/hooks/automations/ahk_x?a=1&b=2 "
+      ],
+      "out": "aws sns subscribe --topic-arn arn:aws:sns:eu-west-1:123456789012:uploads --region eu-west-1 \\\n  --protocol https --notification-endpoint 'https://api.transcdr.com/v1/hooks/automations/ahk_x?a=1&b=2'"
+    },
+    {
+      "fn": "outputLoopRisk",
+      "args": [
+        "incoming/",
+        "transcoded/{stem}/"
+      ],
+      "out": "false"
+    },
+    {
+      "fn": "outputLoopRisk",
+      "args": [
+        "incoming/",
+        "incoming/out/{stem}/"
+      ],
+      "out": "true"
+    },
+    {
+      "fn": "outputLoopRisk",
+      "args": [
+        "",
+        "transcoded/"
+      ],
+      "out": "true"
+    },
+    {
+      "fn": "outputLoopRisk",
+      "args": [
+        "incoming/",
+        "{dir}/out/"
+      ],
+      "out": "true"
+    },
+    {
+      "fn": "outputLoopRisk",
+      "args": [
+        "incoming/deep/",
+        "/incoming"
+      ],
+      "out": "true"
+    }
+  ],
+  "generate": [
+    {
+      "name": "queue direct",
+      "out": {
+        "roles": [
+          "source"
+        ],
+        "key_prefix": "incoming/",
+        "pattern": "**/*.{mp4,mov}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"},{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "topic_policy": "",
+        "bucket_notification": "{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "incoming/",
+            "suffix": ".mp4"
+          },
+          {
+            "id": "transcdr-mov",
+            "prefix": "incoming/",
+            "suffix": ".mov"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4",
+          ".mov"
+        ],
+        "by_suffix": true,
+        "filters_note": "2 configurations, one per extension, under incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "commands": [
+          "aws sqs set-queue-attributes --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/ingest --region us-east-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"S3SendsObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"s3.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:us-east-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnLike\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:s3:::media-in\\\"},\\\"StringEquals\\\":{\\\"aws:SourceAccount\\\":\\\"123456789012\\\"}}}]}\"}'",
+          "aws s3api put-bucket-notification-configuration --bucket media-in --region us-east-1 \\\n  --notification-configuration '{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}'"
+        ]
+      }
+    },
+    {
+      "name": "queue direct, root, outputs back, delete",
+      "out": {
+        "roles": [
+          "source",
+          "destination"
+        ],
+        "key_prefix": "videos/incoming/",
+        "pattern": "*.mp4",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"videos/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/videos/*\"}]}",
+        "consumer_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:eu-west-1:123456789012:ingest\"}]}",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"videos/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/videos/*\"},{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:eu-west-1:123456789012:ingest\"}]}",
+        "queue_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:eu-west-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "topic_policy": "",
+        "bucket_notification": "{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:eu-west-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"videos/incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}}]}",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "videos/incoming/",
+            "suffix": ".mp4"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4"
+        ],
+        "by_suffix": true,
+        "filters_note": "One configuration, under videos/incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "arn:aws:sqs:eu-west-1:123456789012:ingest",
+        "commands": [
+          "aws sqs set-queue-attributes --queue-url https://sqs.eu-west-1.amazonaws.com/123456789012/ingest --region eu-west-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"S3SendsObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"s3.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:eu-west-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnLike\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:s3:::media-in\\\"},\\\"StringEquals\\\":{\\\"aws:SourceAccount\\\":\\\"123456789012\\\"}}}]}\"}'",
+          "aws s3api put-bucket-notification-configuration --bucket media-in \\\n  --notification-configuration '{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:eu-west-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"videos/incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}}]}'"
+        ]
+      }
+    },
+    {
+      "name": "queue fan-out",
+      "out": {
+        "roles": [
+          "source"
+        ],
+        "key_prefix": "",
+        "pattern": "**/*",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"},{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads\"}}}]}",
+        "topic_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:123456789012:media-uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "bucket_notification": "{\"TopicConfigurations\":[{\"Id\":\"transcdr\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads\",\"Events\":[\"s3:ObjectCreated:*\"]}]}",
+        "filters": [
+          {
+            "id": "transcdr",
+            "prefix": "",
+            "suffix": ""
+          }
+        ],
+        "suffix_filters": [],
+        "by_suffix": false,
+        "filters_note": "The pattern **/* has no simple suffix, so the notification filters on the prefix only (here: every new object). The automation's pattern skips the other files.",
+        "queue_arn": "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "commands": [
+          "aws s3api put-bucket-notification-configuration --bucket media-in --region us-east-1 \\\n  --notification-configuration '{\"TopicConfigurations\":[{\"Id\":\"transcdr\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads\",\"Events\":[\"s3:ObjectCreated:*\"]}]}'",
+          "aws sqs set-queue-attributes --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/ingest --region us-east-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"SnsFansOutObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"sns.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:us-east-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnEquals\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:sns:us-east-1:123456789012:media-uploads\\\"}}}]}\"}'",
+          "aws sns set-topic-attributes --topic-arn arn:aws:sns:us-east-1:123456789012:media-uploads --region us-east-1 \\\n  --attribute-name Policy --attribute-value '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:123456789012:media-uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}'",
+          "aws sns subscribe --topic-arn arn:aws:sns:us-east-1:123456789012:media-uploads --region us-east-1 \\\n  --protocol sqs --notification-endpoint arn:aws:sqs:us-east-1:123456789012:ingest"
+        ]
+      }
+    },
+    {
+      "name": "queue fan-out, uppercase and duplicates",
+      "out": {
+        "roles": [
+          "source"
+        ],
+        "key_prefix": "in/",
+        "pattern": "**/*.{MOV,mp4,MOV}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::my bucket\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:DeleteObject\"],\"Resource\":\"arn:aws:s3:::my bucket/*\"}]}",
+        "consumer_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::my bucket\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:DeleteObject\"],\"Resource\":\"arn:aws:s3:::my bucket/*\"},{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"SnsFansOutObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\"}}}]}",
+        "topic_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::my bucket\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "bucket_notification": "{\"TopicConfigurations\":[{\"Id\":\"transcdr-MOV\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"in/\"},{\"Name\":\"suffix\",\"Value\":\".MOV\"}]}}},{\"Id\":\"transcdr-mp4\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"in/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}}]}",
+        "filters": [
+          {
+            "id": "transcdr-MOV",
+            "prefix": "in/",
+            "suffix": ".MOV"
+          },
+          {
+            "id": "transcdr-mp4",
+            "prefix": "in/",
+            "suffix": ".mp4"
+          }
+        ],
+        "suffix_filters": [
+          ".MOV",
+          ".mp4"
+        ],
+        "by_suffix": true,
+        "filters_note": "2 configurations, one per extension, under in/. S3 suffix filters are case-sensitive: a file named .MOV is not sent.",
+        "queue_arn": "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "commands": [
+          "aws s3api put-bucket-notification-configuration --bucket 'my bucket' \\\n  --notification-configuration '{\"TopicConfigurations\":[{\"Id\":\"transcdr-MOV\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"in/\"},{\"Name\":\"suffix\",\"Value\":\".MOV\"}]}}},{\"Id\":\"transcdr-mp4\",\"TopicArn\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"in/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}}]}'",
+          "aws sqs set-queue-attributes --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/ingest --region us-east-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"SnsFansOutObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"sns.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:us-east-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnEquals\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\\\"}}}]}\"}'",
+          "aws sns set-topic-attributes --topic-arn arn:aws:sns:us-east-1:123456789012:media-uploads.fifo --region us-east-1 \\\n  --attribute-name Policy --attribute-value '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-east-1:123456789012:media-uploads.fifo\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::my bucket\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}'",
+          "aws sns subscribe --topic-arn arn:aws:sns:us-east-1:123456789012:media-uploads.fifo --region us-east-1 \\\n  --protocol sqs --notification-endpoint arn:aws:sqs:us-east-1:123456789012:ingest"
+        ]
+      }
+    },
+    {
+      "name": "queue default pattern",
+      "out": {
+        "roles": [
+          "source"
+        ],
+        "key_prefix": "",
+        "pattern": "**/*.{mp4,mov,mkv,webm,m4v,avi,ts,mts,m2ts,mxf}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"},{\"Sid\":\"ConsumeTranscdrTriggers\",\"Effect\":\"Allow\",\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:ChangeMessageVisibility\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\"}]}",
+        "queue_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3SendsObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "topic_policy": "",
+        "bucket_notification": "{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}},{\"Id\":\"transcdr-mkv\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mkv\"}]}}},{\"Id\":\"transcdr-webm\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".webm\"}]}}},{\"Id\":\"transcdr-m4v\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".m4v\"}]}}},{\"Id\":\"transcdr-avi\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".avi\"}]}}},{\"Id\":\"transcdr-ts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".ts\"}]}}},{\"Id\":\"transcdr-mts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mts\"}]}}},{\"Id\":\"transcdr-m2ts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".m2ts\"}]}}},{\"Id\":\"transcdr-mxf\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mxf\"}]}}}]}",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "",
+            "suffix": ".mp4"
+          },
+          {
+            "id": "transcdr-mov",
+            "prefix": "",
+            "suffix": ".mov"
+          },
+          {
+            "id": "transcdr-mkv",
+            "prefix": "",
+            "suffix": ".mkv"
+          },
+          {
+            "id": "transcdr-webm",
+            "prefix": "",
+            "suffix": ".webm"
+          },
+          {
+            "id": "transcdr-m4v",
+            "prefix": "",
+            "suffix": ".m4v"
+          },
+          {
+            "id": "transcdr-avi",
+            "prefix": "",
+            "suffix": ".avi"
+          },
+          {
+            "id": "transcdr-ts",
+            "prefix": "",
+            "suffix": ".ts"
+          },
+          {
+            "id": "transcdr-mts",
+            "prefix": "",
+            "suffix": ".mts"
+          },
+          {
+            "id": "transcdr-m2ts",
+            "prefix": "",
+            "suffix": ".m2ts"
+          },
+          {
+            "id": "transcdr-mxf",
+            "prefix": "",
+            "suffix": ".mxf"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4",
+          ".mov",
+          ".mkv",
+          ".webm",
+          ".m4v",
+          ".avi",
+          ".ts",
+          ".mts",
+          ".m2ts",
+          ".mxf"
+        ],
+        "by_suffix": true,
+        "filters_note": "10 configurations, one per extension. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "arn:aws:sqs:us-east-1:123456789012:ingest",
+        "commands": [
+          "aws sqs set-queue-attributes --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/ingest --region us-east-1 \\\n  --attributes '{\"Policy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Sid\\\":\\\"S3SendsObjectEvents\\\",\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"Service\\\":\\\"s3.amazonaws.com\\\"},\\\"Action\\\":\\\"sqs:SendMessage\\\",\\\"Resource\\\":\\\"arn:aws:sqs:us-east-1:123456789012:ingest\\\",\\\"Condition\\\":{\\\"ArnLike\\\":{\\\"aws:SourceArn\\\":\\\"arn:aws:s3:::media-in\\\"},\\\"StringEquals\\\":{\\\"aws:SourceAccount\\\":\\\"123456789012\\\"}}}]}\"}'",
+          "aws s3api put-bucket-notification-configuration --bucket media-in \\\n  --notification-configuration '{\"QueueConfigurations\":[{\"Id\":\"transcdr-mp4\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}},{\"Id\":\"transcdr-mkv\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mkv\"}]}}},{\"Id\":\"transcdr-webm\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".webm\"}]}}},{\"Id\":\"transcdr-m4v\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".m4v\"}]}}},{\"Id\":\"transcdr-avi\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".avi\"}]}}},{\"Id\":\"transcdr-ts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".ts\"}]}}},{\"Id\":\"transcdr-mts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mts\"}]}}},{\"Id\":\"transcdr-m2ts\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".m2ts\"}]}}},{\"Id\":\"transcdr-mxf\",\"QueueArn\":\"arn:aws:sqs:us-east-1:123456789012:ingest\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"suffix\",\"Value\":\".mxf\"}]}}}]}'"
+        ]
+      }
+    },
+    {
+      "name": "watch",
+      "out": {
+        "roles": [
+          "source",
+          "watch_folder"
+        ],
+        "key_prefix": "videos/incoming/",
+        "pattern": "**/*.{mp4,mov}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"videos/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/videos/*\"}]}",
+        "consumer_policy": "",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\",\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"videos/*\"]}}},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/videos/*\"}]}",
+        "queue_policy": "",
+        "topic_policy": "",
+        "bucket_notification": "",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "videos/incoming/",
+            "suffix": ".mp4"
+          },
+          {
+            "id": "transcdr-mov",
+            "prefix": "videos/incoming/",
+            "suffix": ".mov"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4",
+          ".mov"
+        ],
+        "by_suffix": true,
+        "filters_note": "2 configurations, one per extension, under videos/incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "",
+        "commands": []
+      }
+    },
+    {
+      "name": "watch, outputs back",
+      "out": {
+        "roles": [
+          "source",
+          "watch_folder",
+          "destination"
+        ],
+        "key_prefix": "incoming/",
+        "pattern": "*.mkv",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "queue_policy": "",
+        "topic_policy": "",
+        "bucket_notification": "",
+        "filters": [
+          {
+            "id": "transcdr-mkv",
+            "prefix": "incoming/",
+            "suffix": ".mkv"
+          }
+        ],
+        "suffix_filters": [
+          ".mkv"
+        ],
+        "by_suffix": true,
+        "filters_note": "One configuration, under incoming/. S3 suffix filters are case-sensitive: a file named .MKV is not sent.",
+        "queue_arn": "",
+        "commands": []
+      }
+    },
+    {
+      "name": "webhook without topic",
+      "out": {
+        "roles": [
+          "source"
+        ],
+        "key_prefix": "incoming/",
+        "pattern": "**/*.{mp4,mov}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "queue_policy": "",
+        "topic_policy": "",
+        "bucket_notification": "",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "incoming/",
+            "suffix": ".mp4"
+          },
+          {
+            "id": "transcdr-mov",
+            "prefix": "incoming/",
+            "suffix": ".mov"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4",
+          ".mov"
+        ],
+        "by_suffix": true,
+        "filters_note": "2 configurations, one per extension, under incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "",
+        "commands": []
+      }
+    },
+    {
+      "name": "webhook with topic",
+      "out": {
+        "roles": [
+          "source",
+          "destination"
+        ],
+        "key_prefix": "incoming/",
+        "pattern": "**/*.{mp4,mov}",
+        "bucket_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "consumer_policy": "",
+        "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TranscdrList\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::media-in\"},{\"Sid\":\"TranscdrObjects\",\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\"],\"Resource\":\"arn:aws:s3:::media-in/*\"}]}",
+        "queue_policy": "",
+        "topic_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}",
+        "bucket_notification": "{\"TopicConfigurations\":[{\"Id\":\"transcdr-mp4\",\"TopicArn\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"TopicArn\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}",
+        "filters": [
+          {
+            "id": "transcdr-mp4",
+            "prefix": "incoming/",
+            "suffix": ".mp4"
+          },
+          {
+            "id": "transcdr-mov",
+            "prefix": "incoming/",
+            "suffix": ".mov"
+          }
+        ],
+        "suffix_filters": [
+          ".mp4",
+          ".mov"
+        ],
+        "by_suffix": true,
+        "filters_note": "2 configurations, one per extension, under incoming/. S3 suffix filters are case-sensitive: a file named .MP4 is not sent.",
+        "queue_arn": "",
+        "commands": [
+          "aws sns set-topic-attributes --topic-arn arn:aws:sns:us-west-2:123456789012:uploads --region us-west-2 \\\n  --attribute-name Policy --attribute-value '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3PublishesObjectEvents\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"s3.amazonaws.com\"},\"Action\":\"sns:Publish\",\"Resource\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:s3:::media-in\"},\"StringEquals\":{\"aws:SourceAccount\":\"123456789012\"}}}]}'",
+          "aws s3api put-bucket-notification-configuration --bucket media-in --region us-west-2 \\\n  --notification-configuration '{\"TopicConfigurations\":[{\"Id\":\"transcdr-mp4\",\"TopicArn\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mp4\"}]}}},{\"Id\":\"transcdr-mov\",\"TopicArn\":\"arn:aws:sns:us-west-2:123456789012:uploads\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"incoming/\"},{\"Name\":\"suffix\",\"Value\":\".mov\"}]}}}]}'"
+        ]
+      }
+    }
+  ]
+}
