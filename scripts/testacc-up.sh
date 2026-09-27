@@ -27,6 +27,12 @@ if [ ! -x "$bin" ] || [ -n "${BUILD:-}" ]; then
   (cd "$repo" && cargo build -p transcdr-api)
 fi
 
+# Run a private copy, so nothing that stops the repository's own transcdr
+# processes stops this one.
+ext=; case "$bin" in *.exe) ext=.exe ;; esac
+cp "$bin" "$state/transcdr-tfacc$ext"
+bin="$state/transcdr-tfacc$ext"
+
 echo "Starting LocalStack…"
 docker rm -f tf-transcdr-localstack >/dev/null 2>&1 || true
 docker run -d --name tf-transcdr-localstack -p 4566:4566 \

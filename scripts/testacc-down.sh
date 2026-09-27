@@ -10,6 +10,6 @@ if [ -f "$state/api.pid" ]; then
 fi
 # Windows: nohup'd binaries may outlive their MSYS pid.
 command -v taskkill >/dev/null 2>&1 && powershell -NoProfile -Command \
-  "Get-CimInstance Win32_Process -Filter \"Name='transcdr.exe'\" | Where-Object { \$_.CommandLine -match 'serve --port=${TRANSCDR_TEST_PORT:-18080}' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" 2>/dev/null
+  "Get-Process transcdr-tfacc -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null
 docker rm -f tf-transcdr-localstack >/dev/null 2>&1 || true
 echo "Stopped."
