@@ -15,6 +15,8 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 repo="${TRANSCDR_REPO:-$here/../transcdr}"
 port="${TRANSCDR_TEST_PORT:-18080}"
 state="${STATE_DIR:-$here/.testacc}"
+# A native Windows binary needs C:/… paths, not MSYS /c/… ones.
+native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 localstack_image="${LOCALSTACK_IMAGE:-localstack/localstack:4}"
 bin="$repo/target/debug/transcdr"
 [ -x "$bin.exe" ] && bin="$bin.exe"
@@ -39,8 +41,8 @@ docker run -d --name tf-transcdr-localstack -p 4566:4566 \
   -e SERVICES=s3,sqs,sns,sts,iam -e SQS_ENDPOINT_STRATEGY=off \
   "$localstack_image" >/dev/null
 
-export DATABASE_URL="sqlite://$state/transcdr.sqlite?mode=rwc"
-export STORAGE_ROOT="$state/storage" SERVER_PORT="$port" SERVER_HOST=0.0.0.0
+export DATABASE_URL="sqlite://$(native "$state")/transcdr.sqlite?mode=rwc"
+export STORAGE_ROOT="$(native "$state")/storage" SERVER_PORT="$port" SERVER_HOST=0.0.0.0
 export APP_URL="http://localhost:$port" WORKER_API_URL="http://localhost:$port"
 export DISPATCH_DRIVER=none LOG_FORMAT=json RUST_LOG=warn
 cd "$repo"

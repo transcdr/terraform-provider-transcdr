@@ -17,8 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
 	"github.com/transcdr/terraform-provider-transcdr/internal/setup"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 var (
@@ -40,7 +40,7 @@ var eventTypes = []string{
 func newEventDestinationResource() resource.Resource { return &eventDestinationResource{} }
 
 type eventDestinationResource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type eventDestinationModel struct {
@@ -264,41 +264,39 @@ func (r *eventDestinationResource) Create(ctx context.Context, req resource.Crea
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	in := client.WebhookInput{
-		URL:          ptr(plan.URL),
-		TopicARN:     ptr(plan.TopicARN),
-		QueueURL:     ptr(plan.QueueURL),
-		ConnectionID: ptr(plan.ConnectionID),
+	in := transcdr.WebhookCreateParams{
+		Type:         inferType(&plan),
+		URL:          plan.URL.ValueString(),
+		TopicARN:     plan.TopicARN.ValueString(),
+		QueueURL:     plan.QueueURL.ValueString(),
+		ConnectionID: plan.ConnectionID.ValueString(),
 		Events:       setStrings(ctx, plan.Events, &resp.Diagnostics),
-		Description:  ptr(plan.Description),
-	}
-	if t := inferType(&plan); t != "" {
-		in.Type = &t
+		Description:  plan.Description.ValueString(),
 	}
 	if plan.AWS != nil {
-		in.AWS = &client.WebhookAWSInput{
+		in.AWS = &transcdr.WebhookAWSParams{
 			AccessKeyID:     ptr(plan.AWS.AccessKeyID),
 			SecretAccessKey: ptr(plan.AWS.SecretAccessKey),
 			Region:          ptr(plan.AWS.Region),
-			Endpoint:        ptr(plan.AWS.Endpoint),
-			MessageGroupID:  ptr(plan.AWS.MessageGroupID),
+			Endpoint:        nullableString(plan.AWS.Endpoint),
+			MessageGroupID:  nullableString(plan.AWS.MessageGroupID),
 		}
 	}
-	var w client.WebhookEndpoint
-	if err := r.client.Create(ctx, "/v1/webhooks", in, &w); err != nil {
+	w, err := r.client.Webhooks.Create(ctx, &in)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the event destination", err, eventDestinationParams)
 		return
 	}
 	secret := w.Secret
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), w.ID)...)
 	if !plan.Enabled.IsNull() && !plan.Enabled.ValueBool() {
-		if err := r.client.Patch(ctx, "/v1/webhooks/"+client.PathEscape(w.ID), map[string]any{"enabled": false}, &w); err != nil {
+		if w, err = r.client.Webhooks.Update(ctx, w.ID, &transcdr.WebhookUpdateParams{Enabled: transcdr.Bool(false)}); err != nil {
 			addAPIError(&resp.Diagnostics, "Could not turn the new event destination off", err, eventDestinationParams)
 			return
 		}
 	}
 	state := plan
-	state.fromAPI(&w, &plan)
+	state.fromAPI(w, &plan)
 	state.SigningSecret = strOrNull(secret)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -309,9 +307,8 @@ func (r *eventDestinationResource) Read(ctx context.Context, req resource.ReadRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var w client.WebhookEndpoint
-	err := r.client.Get(ctx, "/v1/webhooks/"+client.PathEscape(state.ID.ValueString()), nil, &w)
-	if client.IsNotFound(err) {
+	w, err := r.client.Webhooks.Get(ctx, state.ID.ValueString())
+	if transcdr.IsNotFound(err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -320,7 +317,7 @@ func (r *eventDestinationResource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 	prior := state
-	state.fromAPI(&w, &prior)
+	state.fromAPI(w, &prior)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -331,7 +328,7 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	in := client.WebhookInput{Description: ptr(plan.Description), Enabled: boolPtr(plan.Enabled)}
+	in := transcdr.WebhookUpdateParams{Description: ptr(plan.Description), Enabled: boolPtr(plan.Enabled)}
 	in.Events = setStrings(ctx, plan.Events, &resp.Diagnostics)
 	if !plan.URL.Equal(state.URL) {
 		in.URL = ptr(plan.URL)
@@ -343,25 +340,25 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 		in.QueueURL = ptr(plan.QueueURL)
 	}
 	if plan.AWS != nil && (state.AWS == nil || *plan.AWS != *state.AWS) {
-		in.AWS = &client.WebhookAWSInput{
+		in.AWS = &transcdr.WebhookAWSParams{
 			AccessKeyID:    ptr(plan.AWS.AccessKeyID),
 			Region:         ptr(plan.AWS.Region),
-			Endpoint:       ptr(plan.AWS.Endpoint),
-			MessageGroupID: ptr(plan.AWS.MessageGroupID),
+			Endpoint:       nullableString(plan.AWS.Endpoint),
+			MessageGroupID: nullableString(plan.AWS.MessageGroupID),
 		}
 		if state.AWS == nil || !plan.AWS.SecretAccessKey.Equal(state.AWS.SecretAccessKey) {
 			in.AWS.SecretAccessKey = ptr(plan.AWS.SecretAccessKey)
 		}
 	}
 	id := state.ID.ValueString()
-	var w client.WebhookEndpoint
-	if err := r.client.Patch(ctx, "/v1/webhooks/"+client.PathEscape(id), in, &w); err != nil {
+	w, err := r.client.Webhooks.Update(ctx, id, &in)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the event destination", err, eventDestinationParams)
 		return
 	}
 	secret := state.SigningSecret
 	if !plan.SecretVersion.Equal(state.SecretVersion) {
-		if err := r.client.Post(ctx, "/v1/webhooks/"+client.PathEscape(id)+"/rotate-secret", nil, &w); err != nil {
+		if w, err = r.client.Webhooks.RotateSecret(ctx, id); err != nil {
 			addAPIError(&resp.Diagnostics, "Could not rotate the signing secret", err, nil)
 			return
 		}
@@ -369,7 +366,7 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 	}
 	next := plan
 	next.ID = state.ID
-	next.fromAPI(&w, &plan)
+	next.fromAPI(w, &plan)
 	next.SigningSecret = secret
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
@@ -380,7 +377,7 @@ func (r *eventDestinationResource) Delete(ctx context.Context, req resource.Dele
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.Delete(ctx, "/v1/webhooks/"+client.PathEscape(state.ID.ValueString())); err != nil {
+	if err := ignoreNotFound(r.client.Webhooks.Delete(ctx, state.ID.ValueString())); err != nil {
 		addAPIError(&resp.Diagnostics, "Could not delete the event destination", err, nil)
 	}
 }
@@ -391,7 +388,7 @@ func (r *eventDestinationResource) ImportState(ctx context.Context, req resource
 
 // fromAPI copies an endpoint from the API. The signing secret and aws.secret_access_key are not
 // returned: the caller keeps them.
-func (m *eventDestinationModel) fromAPI(w *client.WebhookEndpoint, prior *eventDestinationModel) {
+func (m *eventDestinationModel) fromAPI(w *transcdr.WebhookEndpoint, prior *eventDestinationModel) {
 	m.ID = types.StringValue(w.ID)
 	m.Type = types.StringValue(w.Type)
 	m.Target = types.StringValue(w.URL)
@@ -435,7 +432,7 @@ func (m *eventDestinationModel) fromAPI(w *client.WebhookEndpoint, prior *eventD
 	m.Events = stringSet(w.Events)
 	m.Description = types.StringValue(w.Description)
 	m.Enabled = types.BoolValue(w.Enabled)
-	m.FailureCount = types.Int64Value(w.FailureCount)
+	m.FailureCount = types.Int64Value(int64(w.FailureCount))
 	m.SecretVersion = prior.SecretVersion
 	m.SigningSecret = prior.SigningSecret
 	if m.SigningSecret.IsUnknown() {

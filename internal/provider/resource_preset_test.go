@@ -8,6 +8,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 func testAccCBRPreset(name, description, quality string) string {
@@ -71,8 +73,8 @@ func TestAccPreset_cbr(t *testing.T) {
 			{
 				PreConfig: func() {
 					id := stateID(t, "transcdr_preset", name)
-					body := map[string]any{"output": map[string]any{"quality": map[string]any{"bitrate": "9M"}}}
-					if err := testClient().Patch(context.Background(), "/v1/presets/"+id, body, nil); err != nil {
+					out := &transcdr.OutputSpecInput{Quality: &transcdr.Quality{Bitrate: transcdr.String("9M")}}
+					if _, err := testClient().Presets.Update(context.Background(), id, &transcdr.PresetUpdateParams{Output: out}); err != nil {
 						t.Fatal(err)
 					}
 				},

@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 // The acceptance tests run against a real Transcdr API (TRANSCDR_BASE_URL, TRANSCDR_API_KEY) and
@@ -51,8 +51,8 @@ func localstackURL() string {
 }
 
 // testClient talks to the API the tests run against, for checks outside Terraform.
-func testClient() *client.Client {
-	return client.New(os.Getenv("TRANSCDR_BASE_URL"), os.Getenv("TRANSCDR_API_KEY"), "terraform-provider-transcdr/test")
+func testClient() *transcdr.Client {
+	return transcdr.NewClient(transcdr.WithUserAgent("terraform-provider-transcdr/test"))
 }
 
 // Test access keys: AWS-shaped, accepted by LocalStack.
@@ -113,11 +113,11 @@ func checkGone(resourceType, pathPrefix string) func(*terraform.State) error {
 			if rs.Type != resourceType {
 				continue
 			}
-			err := c.Get(context.Background(), pathPrefix+rs.Primary.ID, nil, nil)
+			err := c.Do(context.Background(), "GET", pathPrefix+rs.Primary.ID, nil, nil)
 			if err == nil {
 				return fmt.Errorf("%s %s still exists", resourceType, rs.Primary.ID)
 			}
-			if !client.IsNotFound(err) {
+			if !transcdr.IsNotFound(err) {
 				return err
 			}
 		}

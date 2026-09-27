@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"net/url"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/datasourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -11,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 // ---- transcdr_organization -------------------------------------------------------------
@@ -19,7 +18,7 @@ import (
 func newOrganizationDataSource() datasource.DataSource { return &organizationDataSource{} }
 
 type organizationDataSource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type organizationModel struct {
@@ -69,8 +68,8 @@ func (d *organizationDataSource) Configure(_ context.Context, req datasource.Con
 }
 
 func (d *organizationDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var org client.Organization
-	if err := d.client.Get(ctx, "/v1/organization", nil, &org); err != nil {
+	org, err := d.client.Organization.Get(ctx)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not read the organization", err, nil)
 		return
 	}
@@ -89,10 +88,10 @@ func (d *organizationDataSource) Read(ctx context.Context, _ datasource.ReadRequ
 	if p := org.PlanDetails; p != nil {
 		m.PlanName = types.StringValue(p.Name)
 		m.Features = stringList(p.Features)
-		m.MaxResolution = types.Int64Value(p.MaxResolution)
-		m.MaxConcurrentJobs = types.Int64Value(p.MaxConcurrentJobs)
+		m.MaxResolution = types.Int64Value(int64(p.MaxResolution))
+		m.MaxConcurrentJobs = types.Int64Value(int64(p.MaxConcurrentJobs))
 		m.Priority = types.BoolValue(p.Priority)
-		m.RetentionDays = types.Int64Value(p.RetentionDays)
+		m.RetentionDays = types.Int64Value(int64(p.RetentionDays))
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
@@ -102,7 +101,7 @@ func (d *organizationDataSource) Read(ctx context.Context, _ datasource.ReadRequ
 func newPresetDataSource() datasource.DataSource { return &presetDataSource{} }
 
 type presetDataSource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type presetDataModel struct {
@@ -153,8 +152,8 @@ func (d *presetDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if ref == "" {
 		ref = m.Slug.ValueString()
 	}
-	var p client.Preset
-	if err := d.client.Get(ctx, "/v1/presets/"+client.PathEscape(ref), nil, &p); err != nil {
+	p, err := d.client.Presets.Get(ctx, ref)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not read the preset "+ref, err, nil)
 		return
 	}
@@ -163,7 +162,7 @@ func (d *presetDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	m.Name = types.StringValue(p.Name)
 	m.Description = types.StringValue(p.Description)
 	m.System = types.BoolValue(p.System)
-	m.Output = types.StringValue(compactJSON(p.Output))
+	m.Output = types.StringValue(compactJSON(p.Output.Raw()))
 	m.Metadata = metadataValue(types.MapValueMust(types.StringType, map[string]attr.Value{}), p.Metadata)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
@@ -173,7 +172,7 @@ func (d *presetDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 func newConnectionDataSource() datasource.DataSource { return &connectionDataSource{} }
 
 type connectionDataSource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type connectionDataModel struct {
@@ -240,16 +239,16 @@ func (d *connectionDataSource) Read(ctx context.Context, req datasource.ReadRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var conn *client.Connection
+	var conn *transcdr.Connection
 	if known(cfg.ID) {
-		var c client.Connection
-		if err := d.client.Get(ctx, "/v1/connections/"+client.PathEscape(cfg.ID.ValueString()), nil, &c); err != nil {
+		c, err := d.client.Connections.Get(ctx, cfg.ID.ValueString())
+		if err != nil {
 			addAPIError(&resp.Diagnostics, "Could not read the connection", err, nil)
 			return
 		}
-		conn = &c
+		conn = c
 	} else {
-		all, err := client.ListAll[client.Connection](ctx, d.client, "/v1/connections", url.Values{}, nil)
+		all, err := transcdr.Collect(d.client.Connections.All(ctx, &transcdr.ListParams{Limit: 100}), 0)
 		if err != nil {
 			addAPIError(&resp.Diagnostics, "Could not list the connections", err, nil)
 			return
@@ -278,8 +277,8 @@ func (d *connectionDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		Capabilities: m.Capabilities, FailureCount: m.FailureCount, DisabledReason: m.DisabledReason, LastError: m.LastError, SecretsSet: m.SecretsSet,
 	}
 	// A data source shows every value, including the ones the API derived.
-	if conn.Config.Region != nil {
-		out.Config.Region = types.StringValue(*conn.Config.Region)
+	if r := np(conn.Config.Region); r != nil {
+		out.Config.Region = types.StringValue(*r)
 	}
 	if conn.Config.PathStyle != nil {
 		out.Config.PathStyle = types.BoolValue(*conn.Config.PathStyle)

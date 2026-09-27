@@ -2,7 +2,7 @@ package provider
 
 import (
 	"context"
-	"net/url"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timetypes/timetypes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
@@ -18,7 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 var (
@@ -37,7 +37,7 @@ var scopes = []string{
 func newAPIKeyResource() resource.Resource { return &apiKeyResource{} }
 
 type apiKeyResource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type apiKeyModel struct {
@@ -128,38 +128,38 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{
-		"name":   plan.Name.ValueString(),
-		"scopes": setStrings(ctx, plan.Scopes, &resp.Diagnostics),
-		"mode":   plan.Mode.ValueString(),
+	params := transcdr.APIKeyCreateParams{
+		Name:   plan.Name.ValueString(),
+		Scopes: setStrings(ctx, plan.Scopes, &resp.Diagnostics),
+		Mode:   plan.Mode.ValueString(),
 	}
 	if known(plan.ExpiresAt) {
-		body["expires_at"] = plan.ExpiresAt.ValueString()
+		t, d := plan.ExpiresAt.ValueRFC3339Time()
+		resp.Diagnostics.Append(d...)
+		params.ExpiresAt = &t
 	}
-	var k client.APIKey
-	if err := r.client.Create(ctx, "/v1/api-keys", body, &k); err != nil {
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	k, err := r.client.APIKeys.Create(ctx, &params)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the API key", err, apiKeyParams)
 		return
 	}
 	state := plan
-	state.fromAPI(&k, &plan)
+	state.fromAPI(k, &plan)
 	state.Secret = strOrNull(k.Secret)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 // findAPIKey looks a key up in the list: the API has no endpoint for one key. Revoked keys are
 // not listed, so a revoked key is not found.
-func findAPIKey(ctx context.Context, c *client.Client, id string) (*client.APIKey, error) {
-	keys, err := client.ListAll(ctx, c, "/v1/api-keys", url.Values{}, func(k client.APIKey) bool { return k.ID == id })
-	if err != nil {
-		return nil, err
+func findAPIKey(ctx context.Context, c *transcdr.Client, id string) (*transcdr.APIKey, error) {
+	k, err := c.APIKeys.Find(ctx, id)
+	if transcdr.IsNotFound(err) {
+		return nil, nil
 	}
-	for i := range keys {
-		if keys[i].ID == id {
-			return &keys[i], nil
-		}
-	}
-	return nil, nil
+	return k, err
 }
 
 func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -195,7 +195,7 @@ func (r *apiKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.Delete(ctx, "/v1/api-keys/"+client.PathEscape(state.ID.ValueString())); err != nil {
+	if err := ignoreNotFound(r.client.APIKeys.Revoke(ctx, state.ID.ValueString())); err != nil {
 		addAPIError(&resp.Diagnostics, "Could not revoke the API key", err, nil)
 	}
 }
@@ -204,21 +204,21 @@ func (r *apiKeyResource) ImportState(ctx context.Context, req resource.ImportSta
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func (m *apiKeyModel) fromAPI(k *client.APIKey, prior *apiKeyModel) {
+func (m *apiKeyModel) fromAPI(k *transcdr.APIKey, prior *apiKeyModel) {
 	m.ID = types.StringValue(k.ID)
 	m.Name = types.StringValue(k.Name)
 	m.Scopes = stringSet(k.Scopes)
 	m.Mode = types.StringValue(k.Mode)
 	m.Prefix = types.StringValue(k.Prefix)
-	m.CreatedAt = types.StringValue(k.CreatedAt)
-	m.LastUsedAt = strOrNull(k.LastUsedAt)
+	m.CreatedAt = types.StringValue(formatTime(k.CreatedAt))
+	m.LastUsedAt = timeOrNull(k.LastUsedAt)
 	switch {
 	case k.ExpiresAt == nil:
 		m.ExpiresAt = timetypes.NewRFC3339Null()
 	case known(prior.ExpiresAt) && sameInstant(prior.ExpiresAt, *k.ExpiresAt):
 		m.ExpiresAt = prior.ExpiresAt
 	default:
-		m.ExpiresAt = timetypes.NewRFC3339ValueMust(*k.ExpiresAt)
+		m.ExpiresAt = timetypes.NewRFC3339TimeValue(*k.ExpiresAt)
 	}
 	m.Secret = prior.Secret
 	if m.Secret.IsUnknown() {
@@ -226,8 +226,7 @@ func (m *apiKeyModel) fromAPI(k *client.APIKey, prior *apiKeyModel) {
 	}
 }
 
-func sameInstant(a timetypes.RFC3339, b string) bool {
-	ta, d1 := a.ValueRFC3339Time()
-	tb, d2 := timetypes.NewRFC3339ValueMust(b).ValueRFC3339Time()
-	return !d1.HasError() && !d2.HasError() && ta.Equal(tb)
+func sameInstant(a timetypes.RFC3339, b time.Time) bool {
+	ta, d := a.ValueRFC3339Time()
+	return !d.HasError() && ta.Equal(b)
 }

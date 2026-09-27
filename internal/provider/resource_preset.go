@@ -16,7 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 var (
@@ -30,7 +30,7 @@ var (
 func newPresetResource() resource.Resource { return &presetResource{} }
 
 type presetResource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type presetModel struct {
@@ -149,24 +149,22 @@ func (r *presetResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{
-		"name":        plan.Name.ValueString(),
-		"description": plan.Description.ValueString(),
-		"output":      json.RawMessage(plan.Output.ValueString()),
-	}
-	if known(plan.Slug) {
-		body["slug"] = plan.Slug.ValueString()
+	params := transcdr.PresetCreateParams{
+		Name:        plan.Name.ValueString(),
+		Slug:        ptr(plan.Slug),
+		Description: transcdr.String(plan.Description.ValueString()),
+		Output:      transcdr.RawOutputSpec([]byte(plan.Output.ValueString())),
 	}
 	if known(plan.Metadata) {
-		body["metadata"] = mapStrings(ctx, plan.Metadata, &resp.Diagnostics)
+		params.Metadata = mapStrings(ctx, plan.Metadata, &resp.Diagnostics)
 	}
-	var p client.Preset
-	if err := r.client.Create(ctx, "/v1/presets", body, &p); err != nil {
+	p, err := r.client.Presets.Create(ctx, &params)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the preset", err, presetParams)
 		return
 	}
 	state := plan
-	state.fromAPI(&p, &plan, true)
+	state.fromAPI(p, &plan, true)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -176,9 +174,8 @@ func (r *presetResource) Read(ctx context.Context, req resource.ReadRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var p client.Preset
-	err := r.client.Get(ctx, "/v1/presets/"+client.PathEscape(state.ID.ValueString()), nil, &p)
-	if client.IsNotFound(err) {
+	p, err := r.client.Presets.Get(ctx, state.ID.ValueString())
+	if transcdr.IsNotFound(err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -191,7 +188,7 @@ func (r *presetResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 	prior := state
-	state.fromAPI(&p, &prior, false)
+	state.fromAPI(p, &prior, false)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -202,24 +199,22 @@ func (r *presetResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{
-		"name":        plan.Name.ValueString(),
-		"description": plan.Description.ValueString(),
-		"metadata":    mapStrings(ctx, plan.Metadata, &resp.Diagnostics),
-	}
-	if known(plan.Slug) {
-		body["slug"] = plan.Slug.ValueString()
+	params := transcdr.PresetUpdateParams{
+		Name:        transcdr.String(plan.Name.ValueString()),
+		Slug:        ptr(plan.Slug),
+		Description: transcdr.String(plan.Description.ValueString()),
+		Metadata:    mapStrings(ctx, plan.Metadata, &resp.Diagnostics),
 	}
 	if !jsonEqual(plan.Output.ValueString(), state.Output.ValueString()) {
-		body["output"] = json.RawMessage(plan.Output.ValueString())
+		params.Output = transcdr.RawOutputSpec([]byte(plan.Output.ValueString()))
 	}
-	var p client.Preset
-	if err := r.client.Patch(ctx, "/v1/presets/"+client.PathEscape(state.ID.ValueString()), body, &p); err != nil {
+	p, err := r.client.Presets.Update(ctx, state.ID.ValueString(), &params)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the preset", err, presetParams)
 		return
 	}
 	next := plan
-	next.fromAPI(&p, &plan, true)
+	next.fromAPI(p, &plan, true)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
 
@@ -229,7 +224,7 @@ func (r *presetResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.Delete(ctx, "/v1/presets/"+client.PathEscape(state.ID.ValueString())); err != nil {
+	if err := ignoreNotFound(r.client.Presets.Delete(ctx, state.ID.ValueString())); err != nil {
 		addAPIError(&resp.Diagnostics, "Could not delete the preset", err, nil)
 	}
 }
@@ -241,7 +236,7 @@ func (r *presetResource) ImportState(ctx context.Context, req resource.ImportSta
 
 // fromAPI copies a preset from the API. Right after a write, output stays as configured (the API
 // accepted it); on refresh it is the configured fields' current values (see projectedOutput).
-func (m *presetModel) fromAPI(p *client.Preset, prior *presetModel, afterWrite bool) {
+func (m *presetModel) fromAPI(p *transcdr.Preset, prior *presetModel, afterWrite bool) {
 	m.ID = types.StringValue(p.ID)
 	m.Name = types.StringValue(p.Name)
 	m.Slug = types.StringValue(p.Slug)
@@ -249,15 +244,15 @@ func (m *presetModel) fromAPI(p *client.Preset, prior *presetModel, afterWrite b
 	if known(prior.Output) && afterWrite {
 		m.Output = prior.Output
 	} else if known(prior.Output) {
-		out, _ := projectedOutput(prior.Output.ValueString(), p.Output)
+		out, _ := projectedOutput(prior.Output.ValueString(), p.Output.Raw())
 		if out == prior.Output.ValueString() {
 			m.Output = prior.Output
 		} else {
 			m.Output = jsontypes.NewNormalizedValue(out)
 		}
 	} else {
-		m.Output = jsontypes.NewNormalizedValue(compactJSON(p.Output))
+		m.Output = jsontypes.NewNormalizedValue(compactJSON(p.Output.Raw()))
 	}
 	m.Metadata = metadataValue(prior.Metadata, p.Metadata)
-	m.ResolvedOutput = types.StringValue(compactJSON(p.Output))
+	m.ResolvedOutput = types.StringValue(compactJSON(p.Output.Raw()))
 }

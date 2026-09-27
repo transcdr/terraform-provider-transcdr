@@ -19,7 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 var (
@@ -33,7 +33,7 @@ var (
 func newAutomationResource() resource.Resource { return &automationResource{} }
 
 type automationResource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type automationModel struct {
@@ -281,66 +281,61 @@ func (r *automationResource) ModifyPlan(ctx context.Context, req resource.Modify
 	}
 }
 
-// body is the create (prior nil) or update request. Updates send every field, with the API's way
-// of clearing one ("" or {}), except trigger_connection_id, sent only when it changes.
-func (m *automationModel) body(ctx context.Context, prior *automationModel, diags *diag.Diagnostics) map[string]any {
-	body := map[string]any{
-		"name":                  m.Name.ValueString(),
-		"enabled":               m.Enabled.ValueBool(),
-		"trigger":               m.Trigger.ValueString(),
-		"poll_interval_seconds": m.PollIntervalSeconds.ValueInt64(),
-		"settle_seconds":        m.SettleSeconds.ValueInt64(),
-		"after_success":         m.AfterSuccess.ValueString(),
-		"priority":              m.Priority.ValueString(),
+// params is the create (prior nil) or update request. Updates send every field, with the API's
+// way of clearing one ("" or {}), except trigger_connection_id, sent only when it changes.
+func (m *automationModel) params(ctx context.Context, prior *automationModel, diags *diag.Diagnostics) *transcdr.AutomationParams {
+	p := &transcdr.AutomationParams{
+		Name:                m.Name.ValueString(),
+		Enabled:             transcdr.Bool(m.Enabled.ValueBool()),
+		Trigger:             m.Trigger.ValueString(),
+		PollIntervalSeconds: transcdr.Int(int(m.PollIntervalSeconds.ValueInt64())),
+		SettleSeconds:       transcdr.Int(int(m.SettleSeconds.ValueInt64())),
+		AfterSuccess:        m.AfterSuccess.ValueString(),
+		Priority:            m.Priority.ValueString(),
+		Source: &transcdr.AutomationSourceParams{
+			ConnectionID: m.Source.ConnectionID.ValueString(),
+			Prefix:       ptr(m.Source.Prefix),
+			Pattern:      ptr(m.Source.Pattern),
+		},
 	}
-	source := map[string]any{"connection_id": m.Source.ConnectionID.ValueString()}
-	if known(m.Source.Prefix) {
-		source["prefix"] = m.Source.Prefix.ValueString()
-	}
-	if known(m.Source.Pattern) {
-		source["pattern"] = m.Source.Pattern.ValueString()
-	}
-	body["source"] = source
-
 	// Only on change: naming the queue re-checks that its connection is enabled.
 	if prior == nil || !m.TriggerConnectionID.Equal(prior.TriggerConnectionID) {
 		if known(m.TriggerConnectionID) {
-			body["trigger_connection_id"] = m.TriggerConnectionID.ValueString()
+			p.TriggerConnectionID = transcdr.String(m.TriggerConnectionID.ValueString())
 		} else if prior != nil {
-			body["trigger_connection_id"] = ""
+			p.TriggerConnectionID = transcdr.String("")
 		}
 	}
 	switch {
 	case known(m.Preset):
-		body["preset"] = m.Preset.ValueString()
+		p.Preset = transcdr.String(m.Preset.ValueString())
 	case prior != nil:
-		body["preset"] = ""
+		p.Preset = transcdr.String("")
 	}
 	switch {
 	case known(m.Output):
-		body["output"] = json.RawMessage(m.Output.ValueString())
+		p.Output = transcdr.RawOutputSpec([]byte(m.Output.ValueString()))
 	case prior != nil:
-		body["output"] = map[string]any{}
+		p.Output = transcdr.RawOutputSpec([]byte("{}"))
 	}
 	if m.Destination != nil {
-		dest := map[string]any{"connection_id": m.Destination.ConnectionID.ValueString()}
-		if known(m.Destination.Prefix) {
-			dest["prefix"] = m.Destination.Prefix.ValueString()
-		}
-		body["destination"] = dest
+		p.Destination = transcdr.Value(transcdr.JobDestination{
+			ConnectionID: m.Destination.ConnectionID.ValueString(),
+			Prefix:       m.Destination.Prefix.ValueString(),
+		})
 	}
 	if known(m.Metadata) {
-		body["metadata"] = mapStrings(ctx, m.Metadata, diags)
+		p.Metadata = mapStrings(ctx, m.Metadata, diags)
 	} else if prior != nil {
-		body["metadata"] = map[string]string{}
+		p.Metadata = transcdr.Metadata{}
 	}
 	switch {
 	case known(m.WebhookURL):
-		body["webhook_url"] = m.WebhookURL.ValueString()
+		p.WebhookURL = transcdr.String(m.WebhookURL.ValueString())
 	case prior != nil:
-		body["webhook_url"] = ""
+		p.WebhookURL = transcdr.String("")
 	}
-	return body
+	return p
 }
 
 func (r *automationResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -349,17 +344,17 @@ func (r *automationResource) Create(ctx context.Context, req resource.CreateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := plan.body(ctx, nil, &resp.Diagnostics)
+	params := plan.params(ctx, nil, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var a client.Automation
-	if err := r.client.Create(ctx, "/v1/automations", body, &a); err != nil {
+	a, err := r.client.Automations.Create(ctx, params)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the automation", err, automationParams)
 		return
 	}
 	state := plan
-	state.fromAPI(&a, &plan, true)
+	state.fromAPI(a, &plan, true)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -369,9 +364,8 @@ func (r *automationResource) Read(ctx context.Context, req resource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var a client.Automation
-	err := r.client.Get(ctx, "/v1/automations/"+client.PathEscape(state.ID.ValueString()), nil, &a)
-	if client.IsNotFound(err) {
+	a, err := r.client.Automations.Get(ctx, state.ID.ValueString())
+	if transcdr.IsNotFound(err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -380,7 +374,7 @@ func (r *automationResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 	prior := state
-	state.fromAPI(&a, &prior, false)
+	state.fromAPI(a, &prior, false)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -391,25 +385,25 @@ func (r *automationResource) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := plan.body(ctx, &state, &resp.Diagnostics)
+	params := plan.params(ctx, &state, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	id := state.ID.ValueString()
-	var a client.Automation
-	if err := r.client.Patch(ctx, "/v1/automations/"+client.PathEscape(id), body, &a); err != nil {
+	a, err := r.client.Automations.Update(ctx, id, params)
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the automation", err, automationParams)
 		return
 	}
 	if !plan.HookTokenVersion.Equal(state.HookTokenVersion) {
-		if err := r.client.Post(ctx, "/v1/automations/"+client.PathEscape(id)+"/rotate-hook-token", nil, &a); err != nil {
+		if a, err = r.client.Automations.RotateHookToken(ctx, id); err != nil {
 			addAPIError(&resp.Diagnostics, "Could not rotate the automation's hook token", err, nil)
 			return
 		}
 	}
 	next := plan
 	next.ID = state.ID
-	next.fromAPI(&a, &plan, true)
+	next.fromAPI(a, &plan, true)
 	if a.HookURL == nil {
 		next.HookURL = state.HookURL
 	}
@@ -422,7 +416,7 @@ func (r *automationResource) Delete(ctx context.Context, req resource.DeleteRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.Delete(ctx, "/v1/automations/"+client.PathEscape(state.ID.ValueString())); err != nil {
+	if err := ignoreNotFound(r.client.Automations.Delete(ctx, state.ID.ValueString())); err != nil {
 		addAPIError(&resp.Diagnostics, "Could not delete the automation", err, nil)
 	}
 }
@@ -433,7 +427,7 @@ func (r *automationResource) ImportState(ctx context.Context, req resource.Impor
 
 // fromAPI copies an automation from the API into the model. prior is the plan after a write or the
 // state on refresh: values that mean the same keep their spelling, and "none" stays null.
-func (m *automationModel) fromAPI(a *client.Automation, prior *automationModel, afterWrite bool) {
+func (m *automationModel) fromAPI(a *transcdr.Automation, prior *automationModel, afterWrite bool) {
 	m.ID = types.StringValue(a.ID)
 	m.Name = types.StringValue(a.Name)
 	m.Enabled = types.BoolValue(a.Enabled)
@@ -449,17 +443,17 @@ func (m *automationModel) fromAPI(a *client.Automation, prior *automationModel, 
 		Prefix:       keepIfEquivalent(src.Prefix, &a.Source.Prefix, samePath),
 		Pattern:      types.StringValue(a.Source.Pattern),
 	}
-	m.PollIntervalSeconds = types.Int64Value(a.PollIntervalSeconds)
-	m.SettleSeconds = types.Int64Value(a.SettleSeconds)
+	m.PollIntervalSeconds = types.Int64Value(int64(a.PollIntervalSeconds))
+	m.SettleSeconds = types.Int64Value(int64(a.SettleSeconds))
 	m.Preset = strOrNull(a.Preset)
 
 	switch {
-	case isEmptyJSONObject(a.Output) && prior.Output.IsNull():
+	case isEmptyJSONObject(a.Output.Raw()) && prior.Output.IsNull():
 		m.Output = jsontypes.NewNormalizedNull()
-	case known(prior.Output) && jsonEqual(prior.Output.ValueString(), string(a.Output)):
+	case known(prior.Output) && jsonEqual(prior.Output.ValueString(), string(a.Output.Raw())):
 		m.Output = prior.Output
 	default:
-		m.Output = jsontypes.NewNormalizedValue(string(a.Output))
+		m.Output = jsontypes.NewNormalizedValue(compactJSON(a.Output.Raw()))
 	}
 
 	if a.Destination != nil {
@@ -489,7 +483,7 @@ func (m *automationModel) fromAPI(a *client.Automation, prior *automationModel, 
 	}
 	m.HookTokenVersion = prior.HookTokenVersion
 	m.JobsCreated = types.Int64Value(a.JobsCreated)
-	m.LastPolledAt = strOrNull(a.LastPolledAt)
-	m.LastTriggeredAt = strOrNull(a.LastTriggeredAt)
+	m.LastPolledAt = timeOrNull(a.LastPolledAt)
+	m.LastTriggeredAt = timeOrNull(a.LastTriggeredAt)
 	m.LastError = strOrNull(a.LastError)
 }

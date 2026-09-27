@@ -64,7 +64,7 @@ Then set `TRANSCDR_API_KEY` in the environment (recommended), or `api_key` in th
 
 ## Behaviour
 
-- Requests that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After` (`max_retries`, default 4). Creates carry an `Idempotency-Key` and are retried only on 429.
+- Reads, deletes and PUTs that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After` (`max_retries`, default 4). Creates and updates are sent once, since the API deduplicates retried creates only for jobs and uploads.
 - API errors come back as diagnostics with the API's message, each field error (attached to the attribute when it names one) and the request id to quote to support.
 - Secrets (`transcdr_connection.secrets`, `transcdr_event_destination.aws.secret_access_key`) are write-only in the API. Terraform keeps the configured values and sends them again when they change, which is how you rotate them. Signing secrets, hook URLs and API key secrets are computed and sensitive, and rotate when you change `secret_version` or `hook_token_version`, or when the key is replaced.
 
@@ -75,4 +75,4 @@ Then set `TRANSCDR_API_KEY` in the environment (recommended), or `api_key` in th
 
 - `api_key` (String, Sensitive) A secret API key (`tdk_live_…` or `tdk_test_…`). Defaults to the `TRANSCDR_API_KEY` environment variable. The key needs the scopes of what you manage, e.g. `connections:write`, `automations:write`, `webhooks:write`, `presets:write`, `keys:write` and `org:read`.
 - `base_url` (String) The API base URL. Defaults to the `TRANSCDR_BASE_URL` environment variable, else `https://api.transcdr.com`.
-- `max_retries` (Number) How many times a request that failed with 429 or 5xx (or could not connect) is retried with exponential backoff. Default 4.
+- `max_retries` (Number) How many times a request that is safe to repeat (a read, a delete, or a PUT) is retried with exponential backoff after a 429, a 5xx or a network error. Default 4.

@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 var _ provider.Provider = (*transcdrProvider)(nil)
@@ -51,11 +51,11 @@ func (p *transcdrProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 				Sensitive: true,
 			},
 			"base_url": schema.StringAttribute{
-				MarkdownDescription: "The API base URL. Defaults to the `TRANSCDR_BASE_URL` environment variable, else `" + client.DefaultBaseURL + "`.",
+				MarkdownDescription: "The API base URL. Defaults to the `TRANSCDR_BASE_URL` environment variable, else `" + transcdr.DefaultBaseURL + "`.",
 				Optional:            true,
 			},
 			"max_retries": schema.Int64Attribute{
-				MarkdownDescription: "How many times a request that failed with 429 or 5xx (or could not connect) is retried with exponential backoff. Default 4.",
+				MarkdownDescription: "How many times a request that is safe to repeat (a read, a delete, or a PUT) is retried with exponential backoff after a 429, a 5xx or a network error. Default 4.",
 				Optional:            true,
 			},
 		},
@@ -82,22 +82,28 @@ func (p *transcdrProvider) Configure(ctx context.Context, req provider.Configure
 		baseURL = config.BaseURL.ValueString()
 	}
 	if baseURL == "" {
-		baseURL = client.DefaultBaseURL
+		baseURL = transcdr.DefaultBaseURL
 	}
 
-	c := client.New(baseURL, apiKey, "terraform-provider-transcdr/"+p.version)
+	opts := []transcdr.Option{
+		transcdr.WithAPIKey(apiKey),
+		transcdr.WithBaseURL(baseURL),
+		transcdr.WithUserAgent("terraform-provider-transcdr/" + p.version),
+		transcdr.WithMaxRetries(4),
+	}
 	if !config.MaxRetries.IsNull() && !config.MaxRetries.IsUnknown() {
-		if n := config.MaxRetries.ValueInt64(); n >= 0 {
-			c.MaxRetries = int(n)
-		} else {
+		n := config.MaxRetries.ValueInt64()
+		if n < 0 {
 			resp.Diagnostics.AddAttributeError(path.Root("max_retries"), "Invalid max_retries", "max_retries must be 0 or more.")
 			return
 		}
+		opts = append(opts, transcdr.WithMaxRetries(int(n)))
 	} else if v := os.Getenv("TRANSCDR_MAX_RETRIES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			c.MaxRetries = n
+			opts = append(opts, transcdr.WithMaxRetries(n))
 		}
 	}
+	c := transcdr.NewClient(opts...)
 
 	data := &providerData{client: c, hasKey: apiKey != ""}
 	resp.ResourceData = data
@@ -125,6 +131,6 @@ func (p *transcdrProvider) DataSources(context.Context) []func() datasource.Data
 
 // providerData is what Configure hands to resources and data sources.
 type providerData struct {
-	client *client.Client
+	client *transcdr.Client
 	hasKey bool
 }

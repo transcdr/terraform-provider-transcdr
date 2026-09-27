@@ -94,7 +94,7 @@ func TestAccConnection_s3(t *testing.T) {
 			{
 				PreConfig: func() {
 					id := stateID(t, "transcdr_connection", bucket)
-					if err := testClient().Patch(context.Background(), "/v1/connections/"+id, map[string]any{"enabled": false}, nil); err != nil {
+					if _, err := testClient().Connections.Disable(context.Background(), id); err != nil {
 						t.Fatal(err)
 					}
 				},
@@ -225,7 +225,7 @@ resource "transcdr_connection" "bad" {
   }
 }
 `,
-				ExpectError: regexp.MustCompile(`(?s)Could not create the connection.*config\.queue_url.*Request id`),
+				ExpectError: regexp.MustCompile(`(?s)Could not create the connection.*config\.queue_url.*Request\s+id`),
 			},
 		},
 	})
@@ -246,7 +246,7 @@ func stateID(t *testing.T, resourceType, marker string) string {
 			Name string `json:"name"`
 		} `json:"data"`
 	}
-	if err := testClient().Get(context.Background(), paths[resourceType], nil, &list); err != nil {
+	if err := testClient().Do(context.Background(), "GET", paths[resourceType], nil, &list); err != nil {
 		t.Fatal(err)
 	}
 	for _, o := range list.Data {

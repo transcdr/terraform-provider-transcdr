@@ -126,7 +126,8 @@ provider_installation {
 
 ## How it maps to the API
 
-- **Retries.** Requests that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After`. Creates carry an `Idempotency-Key` header. They are retried only on 429, since not every create endpoint deduplicates by key yet. Requests carry the user agent `terraform-provider-transcdr/<version>`.
+- **The Go SDK.** Every call goes through [transcdr-sdk-go](https://github.com/transcdr/transcdr-sdk-go), the public Go client for the API.
+- **Retries.** Reads, deletes and PUTs that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After` (`max_retries`). Creates and updates are sent once: the API deduplicates by `Idempotency-Key` only for jobs and uploads, so repeating another create could make a duplicate. Requests carry the user agent `terraform-provider-transcdr/<version> transcdr-sdk-go/<version>`.
 - **Errors.** Errors show the API's message, every field error and the request id. A field error that names an attribute is attached to it.
 - **Write-only secrets.** `transcdr_connection.secrets` and `transcdr_event_destination.aws.secret_access_key` are never returned. Terraform keeps the configured values and sends one again only when it changes, which is how you rotate it. If a secret Terraform set disappears from `secrets_set`, the next plan puts it back.
 - **Rotations.**

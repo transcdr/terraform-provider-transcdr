@@ -14,8 +14,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
-
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
 )
 
 // examplesDir is the repository's examples/, from the package directory (where `go test` runs) or
@@ -157,15 +155,15 @@ func uploadAndExpectJob(key string) resource.TestCheckFunc {
 		deadline := time.Now().Add(90 * time.Second)
 		var received int64
 		for {
-			var run client.AutomationRun
-			if err := c.Post(ctx, "/v1/automations/"+automation+"/run", nil, &run); err != nil {
+			run, err := c.Automations.Run(ctx, automation)
+			if err != nil {
 				return err
 			}
 			if run.MessagesReceived != nil {
 				received += *run.MessagesReceived
 			}
-			var items client.List[client.AutomationItem]
-			if err := c.Get(ctx, "/v1/automations/"+automation+"/items", nil, &items); err != nil {
+			items, err := c.Automations.Items(ctx, automation, nil)
+			if err != nil {
 				return err
 			}
 			for _, item := range items.Data {
@@ -175,16 +173,8 @@ func uploadAndExpectJob(key string) resource.TestCheckFunc {
 				if item.JobID == nil {
 					return fmt.Errorf("%s was processed without a job: status %s, error %v", key, item.Status, deref(item.Error))
 				}
-				var job struct {
-					ID    string `json:"id"`
-					Input struct {
-						Type         string `json:"type"`
-						ConnectionID string `json:"connection_id"`
-						Path         string `json:"path"`
-					} `json:"input"`
-					Metadata map[string]string `json:"metadata"`
-				}
-				if err := c.Get(ctx, "/v1/jobs/"+*item.JobID, nil, &job); err != nil {
+				job, err := c.Jobs.Get(ctx, *item.JobID)
+				if err != nil {
 					return err
 				}
 				if job.Input.Type != "connection" || job.Input.ConnectionID != source || job.Input.Path != key {

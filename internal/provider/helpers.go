@@ -3,22 +3,23 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 // clientFrom unpacks the provider data handed to Configure of a resource or data source.
-func clientFrom(data any, diags *diag.Diagnostics) *client.Client {
+func clientFrom(data any, diags *diag.Diagnostics) *transcdr.Client {
 	if data == nil {
 		return nil
 	}
@@ -39,18 +40,59 @@ func clientFrom(data any, diags *diag.Diagnostics) *client.Client {
 // every field error and the request id; a field error whose param names an attribute is attached
 // to that attribute too.
 func addAPIError(diags *diag.Diagnostics, summary string, err error, paramPath func(string) (path.Path, bool)) {
-	var apiErr *client.Error
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := transcdr.AsError(err)
+	if !ok {
 		diags.AddError(summary, err.Error())
 		return
 	}
 	if paramPath != nil && apiErr.Param != "" {
 		if p, ok := paramPath(apiErr.Param); ok {
-			diags.AddAttributeError(p, summary, apiErr.Detail())
+			diags.AddAttributeError(p, summary, errorDetail(apiErr))
 			return
 		}
 	}
-	diags.AddError(summary, apiErr.Detail())
+	diags.AddError(summary, errorDetail(apiErr))
+}
+
+// errorDetail is an API error's explanation for a diagnostic: the message, each field error, and
+// the request id to quote to support.
+func errorDetail(e *transcdr.Error) string {
+	var b strings.Builder
+	b.WriteString(e.Message)
+	if len(e.Details) > 0 {
+		b.WriteString("\n\nField errors:")
+		keys := make([]string, 0, len(e.Details))
+		for k := range e.Details {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, field := range keys {
+			for _, msg := range e.Details[field] {
+				fmt.Fprintf(&b, "\n  - %s: %s", field, msg)
+			}
+		}
+	} else if e.Param != "" {
+		fmt.Fprintf(&b, "\n\nField: %s", e.Param)
+	}
+	fmt.Fprintf(&b, "\n\nThe API returned HTTP %d", e.Status)
+	if e.Code != "" {
+		fmt.Fprintf(&b, " (%s: %s)", e.Type, e.Code)
+	} else if e.Type != "" {
+		fmt.Fprintf(&b, " (%s)", e.Type)
+	}
+	b.WriteString(".")
+	if e.RequestID != "" {
+		fmt.Fprintf(&b, " Request id: %s.", e.RequestID)
+	}
+	return b.String()
+}
+
+// ignoreNotFound treats a 404 on delete as success: the object is already gone.
+func ignoreNotFound(err error) error {
+	if transcdr.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // topLevelParam maps an API param such as `config.bucket` or `source.prefix` onto the attribute
@@ -237,9 +279,8 @@ func isEmptyJSONObject(raw json.RawMessage) bool {
 
 // apiDetail is an API error's full explanation, or the error text.
 func apiDetail(err error) string {
-	var apiErr *client.Error
-	if errors.As(err, &apiErr) {
-		return apiErr.Detail()
+	if apiErr, ok := transcdr.AsError(err); ok {
+		return errorDetail(apiErr)
 	}
 	return err.Error()
 }
@@ -257,4 +298,23 @@ func jsonEqual(a, b string) bool {
 // joinTicks formats values as a Markdown list of code spans: "`a`, `b`".
 func joinTicks(values []string) string {
 	return strings.Join(values, "`, `")
+}
+
+// nullableString is a known string as a Nullable value, else left out.
+func nullableString(v types.String) transcdr.Nullable[string] {
+	if known(v) {
+		return transcdr.Value(v.ValueString())
+	}
+	return transcdr.Nullable[string]{}
+}
+
+// formatTime renders an API timestamp as RFC 3339.
+func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// timeOrNull renders an optional API timestamp.
+func timeOrNull(t *time.Time) types.String {
+	if t == nil {
+		return types.StringNull()
+	}
+	return types.StringValue(formatTime(*t))
 }

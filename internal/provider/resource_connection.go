@@ -18,7 +18,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
+
 	"github.com/transcdr/terraform-provider-transcdr/internal/setup"
 )
 
@@ -37,7 +38,7 @@ var (
 func newConnectionResource() resource.Resource { return &connectionResource{} }
 
 type connectionResource struct {
-	client *client.Client
+	client *transcdr.Client
 }
 
 type connectionModel struct {
@@ -282,42 +283,58 @@ var connectionParams = topLevelParam(map[string][]string{
 
 // configBody is the config as sent. With prior (an update), fields set before and now removed are
 // sent as null (false for path_style) so the API's merge clears them.
-func configBody(cfg, prior *connectionConfigModel) map[string]any {
-	body := map[string]any{}
-	put := func(name string, now, before attr.Value, value any, cleared any) {
-		switch {
-		case known(now):
-			body[name] = value
-		case prior != nil && known(before):
-			body[name] = cleared
-		}
-	}
-	var p connectionConfigModel
+func configBody(cfg, prior *connectionConfigModel) transcdr.ConnectionConfig {
+	p := nullConfig()
 	if prior != nil {
 		p = *prior
 	}
-	put("endpoint", cfg.Endpoint, p.Endpoint, cfg.Endpoint.ValueString(), nil)
-	put("bucket", cfg.Bucket, p.Bucket, cfg.Bucket.ValueString(), nil)
-	put("region", cfg.Region, p.Region, cfg.Region.ValueString(), nil)
-	put("path_style", cfg.PathStyle, p.PathStyle, cfg.PathStyle.ValueBool(), false)
-	put("account", cfg.Account, p.Account, cfg.Account.ValueString(), nil)
-	put("host", cfg.Host, p.Host, cfg.Host.ValueString(), nil)
-	put("port", cfg.Port, p.Port, cfg.Port.ValueInt64(), nil)
-	put("username", cfg.Username, p.Username, cfg.Username.ValueString(), nil)
-	put("root", cfg.Root, p.Root, cfg.Root.ValueString(), nil)
-	put("passive", cfg.Passive, p.Passive, cfg.Passive.ValueBool(), nil)
-	put("host_key_fingerprint", cfg.HostKeyFingerprint, p.HostKeyFingerprint, cfg.HostKeyFingerprint.ValueString(), nil)
-	put("queue_url", cfg.QueueURL, p.QueueURL, cfg.QueueURL.ValueString(), nil)
-	put("topic_arn", cfg.TopicARN, p.TopicARN, cfg.TopicARN.ValueString(), nil)
-	put("url", cfg.URL, p.URL, cfg.URL.ValueString(), nil)
-	put("message_group_id", cfg.MessageGroupID, p.MessageGroupID, cfg.MessageGroupID.ValueString(), nil)
-	return body
+	str := func(now, before types.String) transcdr.Nullable[string] {
+		switch {
+		case known(now):
+			return transcdr.Value(now.ValueString())
+		case prior != nil && known(before):
+			return transcdr.Null[string]()
+		}
+		return transcdr.Nullable[string]{}
+	}
+	out := transcdr.ConnectionConfig{
+		Endpoint:           str(cfg.Endpoint, p.Endpoint),
+		Bucket:             str(cfg.Bucket, p.Bucket),
+		Region:             str(cfg.Region, p.Region),
+		Account:            str(cfg.Account, p.Account),
+		Host:               str(cfg.Host, p.Host),
+		Username:           str(cfg.Username, p.Username),
+		Root:               str(cfg.Root, p.Root),
+		HostKeyFingerprint: str(cfg.HostKeyFingerprint, p.HostKeyFingerprint),
+		QueueURL:           str(cfg.QueueURL, p.QueueURL),
+		TopicARN:           str(cfg.TopicARN, p.TopicARN),
+		URL:                str(cfg.URL, p.URL),
+		MessageGroupID:     str(cfg.MessageGroupID, p.MessageGroupID),
+	}
+	switch {
+	case known(cfg.PathStyle):
+		out.PathStyle = transcdr.Bool(cfg.PathStyle.ValueBool())
+	case prior != nil && known(p.PathStyle):
+		out.PathStyle = transcdr.Bool(false)
+	}
+	switch {
+	case known(cfg.Port):
+		out.Port = transcdr.Value(int(cfg.Port.ValueInt64()))
+	case prior != nil && known(p.Port):
+		out.Port = transcdr.Null[int]()
+	}
+	switch {
+	case known(cfg.Passive):
+		out.Passive = transcdr.Value(cfg.Passive.ValueBool())
+	case prior != nil && known(p.Passive):
+		out.Passive = transcdr.Null[bool]()
+	}
+	return out
 }
 
 // secretsBody is the secrets as sent: on create every one set; on update only those that changed,
-// with `""` for one removed (which clears it).
-func secretsBody(now, prior *connectionSecrets) map[string]string {
-	body := map[string]string{}
+// with "" for one removed (which clears it). Nil when there is nothing to send.
+func secretsBody(now, prior *connectionSecrets) *transcdr.ConnectionSecrets {
 	var n, p connectionSecrets
 	if now != nil {
 		n = *now
@@ -325,17 +342,30 @@ func secretsBody(now, prior *connectionSecrets) map[string]string {
 	if prior != nil {
 		p = *prior
 	}
+	out := transcdr.ConnectionSecrets{}
+	targets := map[string]**string{
+		"access_key_id": &out.AccessKeyID, "secret_access_key": &out.SecretAccessKey, "session_token": &out.SessionToken,
+		"password": &out.Password, "private_key": &out.PrivateKey, "private_key_passphrase": &out.PrivateKeyPassphrase,
+		"service_account_json": &out.ServiceAccountJSON, "account_key": &out.AccountKey, "sas_token": &out.SASToken,
+		"bearer_token": &out.BearerToken,
+	}
+	set := false
 	nf, pf := n.fields(), p.fields()
 	for i := range nf {
 		nv, pv := *nf[i].value, *pf[i].value
 		switch {
 		case known(nv) && (prior == nil || !nv.Equal(pv)):
-			body[nf[i].name] = nv.ValueString()
+			*targets[nf[i].name] = transcdr.String(nv.ValueString())
+			set = true
 		case prior != nil && known(pv) && nv.IsNull():
-			body[nf[i].name] = ""
+			*targets[nf[i].name] = transcdr.String("")
+			set = true
 		}
 	}
-	return body
+	if !set {
+		return nil
+	}
+	return &out
 }
 
 func (r *connectionResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -344,29 +374,26 @@ func (r *connectionResource) Create(ctx context.Context, req resource.CreateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{
-		"name":   plan.Name.ValueString(),
-		"kind":   plan.Kind.ValueString(),
-		"config": configBody(plan.Config, nil),
-	}
-	if s := secretsBody(plan.Secrets, nil); len(s) > 0 {
-		body["secrets"] = s
-	}
-	var conn client.Connection
-	if err := r.client.Create(ctx, "/v1/connections", body, &conn); err != nil {
+	conn, err := r.client.Connections.Create(ctx, &transcdr.ConnectionCreateParams{
+		Name:    plan.Name.ValueString(),
+		Kind:    plan.Kind.ValueString(),
+		Config:  configBody(plan.Config, nil),
+		Secrets: secretsBody(plan.Secrets, nil),
+	})
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the connection", err, connectionParams)
 		return
 	}
 	// Save the id first so a failure below leaves the connection in state, not orphaned.
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), conn.ID)...)
 	if !plan.Enabled.IsNull() && !plan.Enabled.ValueBool() {
-		if err := r.client.Patch(ctx, "/v1/connections/"+client.PathEscape(conn.ID), map[string]any{"enabled": false}, &conn); err != nil {
+		if conn, err = r.client.Connections.Disable(ctx, conn.ID); err != nil {
 			addAPIError(&resp.Diagnostics, "Could not turn the new connection off", err, connectionParams)
 			return
 		}
 	}
 	state := plan
-	resp.Diagnostics.Append(state.fromAPI(&conn, &plan, true)...)
+	resp.Diagnostics.Append(state.fromAPI(conn, &plan, true)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -376,9 +403,8 @@ func (r *connectionResource) Read(ctx context.Context, req resource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var conn client.Connection
-	err := r.client.Get(ctx, "/v1/connections/"+client.PathEscape(state.ID.ValueString()), nil, &conn)
-	if client.IsNotFound(err) {
+	conn, err := r.client.Connections.Get(ctx, state.ID.ValueString())
+	if transcdr.IsNotFound(err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -387,7 +413,7 @@ func (r *connectionResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 	prior := state
-	resp.Diagnostics.Append(state.fromAPI(&conn, &prior, false)...)
+	resp.Diagnostics.Append(state.fromAPI(conn, &prior, false)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -398,33 +424,36 @@ func (r *connectionResource) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{}
+	params := transcdr.ConnectionUpdateParams{Secrets: secretsBody(plan.Secrets, orEmpty(state.Secrets))}
+	changed := params.Secrets != nil
 	if !plan.Name.Equal(state.Name) {
-		body["name"] = plan.Name.ValueString()
+		params.Name = transcdr.String(plan.Name.ValueString())
+		changed = true
 	}
 	if !plan.Enabled.Equal(state.Enabled) {
-		body["enabled"] = plan.Enabled.ValueBool()
+		params.Enabled = transcdr.Bool(plan.Enabled.ValueBool())
+		changed = true
 	}
-	if cfg := configBody(plan.Config, state.Config); !sameConfig(plan.Config, state.Config) {
-		body["config"] = cfg
+	if !sameConfig(plan.Config, state.Config) {
+		cfg := configBody(plan.Config, state.Config)
+		params.Config = &cfg
+		changed = true
 	}
-	if s := secretsBody(plan.Secrets, orEmpty(state.Secrets)); len(s) > 0 {
-		body["secrets"] = s
-	}
-	var conn client.Connection
 	id := state.ID.ValueString()
-	if len(body) == 0 {
-		if err := r.client.Get(ctx, "/v1/connections/"+client.PathEscape(id), nil, &conn); err != nil {
-			addAPIError(&resp.Diagnostics, "Could not read the connection", err, nil)
-			return
-		}
-	} else if err := r.client.Patch(ctx, "/v1/connections/"+client.PathEscape(id), body, &conn); err != nil {
+	var conn *transcdr.Connection
+	var err error
+	if changed {
+		conn, err = r.client.Connections.Update(ctx, id, &params)
+	} else {
+		conn, err = r.client.Connections.Get(ctx, id)
+	}
+	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the connection", err, connectionParams)
 		return
 	}
 	next := plan
 	next.ID = state.ID
-	resp.Diagnostics.Append(next.fromAPI(&conn, &plan, true)...)
+	resp.Diagnostics.Append(next.fromAPI(conn, &plan, true)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
 
@@ -448,12 +477,12 @@ func (r *connectionResource) Delete(ctx context.Context, req resource.DeleteRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	err := r.client.Delete(ctx, "/v1/connections/"+client.PathEscape(state.ID.ValueString()))
-	if client.IsConflict(err) {
+	err := ignoreNotFound(r.client.Connections.Delete(ctx, state.ID.ValueString()))
+	if transcdr.IsConflict(err) {
 		resp.Diagnostics.AddError("The connection is still in use",
 			"Transcdr refuses to delete a connection while an automation uses it as its source or destination. "+
 				"Delete those automations, or point them at another connection, first. In Terraform, reference the connection's id from the "+
-				"transcdr_automation (rather than a literal) so the automation is destroyed or updated before the connection.\n\n"+err.(interface{ Detail() string }).Detail())
+				"transcdr_automation (rather than a literal) so the automation is destroyed or updated before the connection.\n\n"+apiDetail(err))
 		return
 	}
 	if err != nil {
@@ -469,7 +498,7 @@ func (r *connectionResource) ImportState(ctx context.Context, req resource.Impor
 // after a write, the state on refresh): fields that mean the same as the API's value keep their
 // spelling, server-derived values the configuration left out stay null, and secrets stay as
 // configured, since they are never returned.
-func (m *connectionModel) fromAPI(conn *client.Connection, prior *connectionModel, afterWrite bool) diag.Diagnostics {
+func (m *connectionModel) fromAPI(conn *transcdr.Connection, prior *connectionModel, afterWrite bool) diag.Diagnostics {
 	var diags diag.Diagnostics
 	m.ID = types.StringValue(conn.ID)
 	m.Name = types.StringValue(conn.Name)
@@ -477,7 +506,7 @@ func (m *connectionModel) fromAPI(conn *client.Connection, prior *connectionMode
 	m.Enabled = types.BoolValue(conn.Enabled)
 	m.Class = types.StringValue(conn.Class)
 	m.Status = types.StringValue(conn.Status)
-	m.FailureCount = types.Int64Value(conn.FailureCount)
+	m.FailureCount = types.Int64Value(int64(conn.FailureCount))
 	m.DisabledReason = strOrNull(conn.DisabledReason)
 	m.LastError = strOrNull(conn.LastError)
 	m.SecretsSet = stringSet(conn.SecretsSet)
@@ -502,7 +531,7 @@ func (m *connectionModel) fromAPI(conn *client.Connection, prior *connectionMode
 	return diags
 }
 
-func configFromAPI(conn *client.Connection, prior *connectionModel) *connectionConfigModel {
+func configFromAPI(conn *transcdr.Connection, prior *connectionModel) *connectionConfigModel {
 	p := nullConfig()
 	if prior != nil && prior.Config != nil {
 		p = *prior.Config
@@ -511,51 +540,59 @@ func configFromAPI(conn *client.Connection, prior *connectionModel) *connectionC
 	derivedRegion := ""
 	switch conn.Kind {
 	case "sqs":
-		if c.QueueURL != nil {
-			derivedRegion = setup.QueueRegion(*c.QueueURL)
+		if q := np(c.QueueURL); q != nil {
+			derivedRegion = setup.QueueRegion(*q)
 		}
 	case "sns":
-		if c.TopicARN != nil {
-			derivedRegion = setup.TopicRegion(*c.TopicARN)
+		if t := np(c.TopicARN); t != nil {
+			derivedRegion = setup.TopicRegion(*t)
 		}
 	}
 	cfg := connectionConfigModel{
-		Endpoint:           keepIfEquivalent(p.Endpoint, c.Endpoint, sameURL),
-		Bucket:             keepIfEquivalent(p.Bucket, c.Bucket, sameString),
-		Region:             keepIfEquivalent(p.Region, c.Region, sameString),
-		Account:            keepIfEquivalent(p.Account, c.Account, sameString),
-		Host:               keepIfEquivalent(p.Host, c.Host, sameString),
-		Username:           keepIfEquivalent(p.Username, c.Username, sameString),
-		Root:               keepIfEquivalent(p.Root, c.Root, samePath),
-		HostKeyFingerprint: keepIfEquivalent(p.HostKeyFingerprint, c.HostKeyFingerprint, sameString),
-		QueueURL:           keepIfEquivalent(p.QueueURL, c.QueueURL, sameURL),
-		TopicARN:           keepIfEquivalent(p.TopicARN, c.TopicARN, sameString),
-		URL:                keepIfEquivalent(p.URL, c.URL, sameURL),
-		MessageGroupID:     keepIfEquivalent(p.MessageGroupID, c.MessageGroupID, sameString),
+		Endpoint:           keepIfEquivalent(p.Endpoint, np(c.Endpoint), sameURL),
+		Bucket:             keepIfEquivalent(p.Bucket, np(c.Bucket), sameString),
+		Region:             keepIfEquivalent(p.Region, np(c.Region), sameString),
+		Account:            keepIfEquivalent(p.Account, np(c.Account), sameString),
+		Host:               keepIfEquivalent(p.Host, np(c.Host), sameString),
+		Username:           keepIfEquivalent(p.Username, np(c.Username), sameString),
+		Root:               keepIfEquivalent(p.Root, np(c.Root), samePath),
+		HostKeyFingerprint: keepIfEquivalent(p.HostKeyFingerprint, np(c.HostKeyFingerprint), sameString),
+		QueueURL:           keepIfEquivalent(p.QueueURL, np(c.QueueURL), sameURL),
+		TopicARN:           keepIfEquivalent(p.TopicARN, np(c.TopicARN), sameString),
+		URL:                keepIfEquivalent(p.URL, np(c.URL), sameURL),
+		MessageGroupID:     keepIfEquivalent(p.MessageGroupID, np(c.MessageGroupID), sameString),
 		PathStyle:          types.BoolNull(),
 		Port:               types.Int64Null(),
 		Passive:            types.BoolNull(),
 	}
 	// A region the API read from the queue URL or topic ARN is not a setting of the configuration.
-	if p.Region.IsNull() && c.Region != nil && *c.Region == derivedRegion {
+	if r := np(c.Region); p.Region.IsNull() && r != nil && *r == derivedRegion {
 		cfg.Region = types.StringNull()
 	}
 	// The API always returns path_style; false is its default.
 	if c.PathStyle != nil && (*c.PathStyle || !p.PathStyle.IsNull()) {
 		cfg.PathStyle = types.BoolValue(*c.PathStyle)
 	}
-	if c.Port != nil {
-		cfg.Port = types.Int64Value(*c.Port)
+	if port, ok := c.Port.Get(); ok {
+		cfg.Port = types.Int64Value(int64(port))
 	}
-	if c.Passive != nil {
-		cfg.Passive = types.BoolValue(*c.Passive)
+	if passive, ok := c.Passive.Get(); ok {
+		cfg.Passive = types.BoolValue(passive)
 	}
 	return &cfg
 }
 
+// np is a Nullable string's value, or nil when unset or null.
+func np(n transcdr.Nullable[string]) *string {
+	if v, ok := n.Get(); ok {
+		return &v
+	}
+	return nil
+}
+
 // secretsAfterRead keeps the secrets as configured, since the API never returns them. On a refresh,
 // one that was stored and no longer is (per secrets_set) is dropped, so the next plan sends it again.
-func secretsAfterRead(conn *client.Connection, prior *connectionModel, afterWrite bool) *connectionSecrets {
+func secretsAfterRead(conn *transcdr.Connection, prior *connectionModel, afterWrite bool) *connectionSecrets {
 	if prior == nil || prior.Secrets == nil {
 		return nil
 	}

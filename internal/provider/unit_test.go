@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/transcdr/terraform-provider-transcdr/internal/client"
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 func TestSchemasAreValid(t *testing.T) {
@@ -170,35 +170,39 @@ func TestConfigBodyClearsRemovedFields(t *testing.T) {
 	next.Bucket = types.StringValue("media")
 	next.Region = types.StringValue("auto")
 
-	body := configBody(&next, &prior)
-	want := map[string]any{"bucket": "media", "region": "auto", "root": nil, "path_style": false, "endpoint": nil}
-	if !reflect.DeepEqual(body, want) {
-		t.Fatalf("body = %#v", body)
+	body, _ := json.Marshal(configBody(&next, &prior))
+	if !jsonEqual(string(body), `{"bucket":"media","region":"auto","root":null,"path_style":false,"endpoint":null}`) {
+		t.Fatalf("body = %s", body)
 	}
-	if body := configBody(&next, nil); !reflect.DeepEqual(body, map[string]any{"bucket": "media", "region": "auto"}) {
-		t.Fatalf("create body = %#v", body)
+	body, _ = json.Marshal(configBody(&next, nil))
+	if !jsonEqual(string(body), `{"bucket":"media","region":"auto"}`) {
+		t.Fatalf("create body = %s", body)
 	}
 }
 
 func TestSecretsBody(t *testing.T) {
 	prior := &connectionSecrets{AccessKeyID: types.StringValue("AKIA1"), SecretAccessKey: types.StringValue("s1"), SessionToken: types.StringValue("t")}
 	next := &connectionSecrets{AccessKeyID: types.StringValue("AKIA1"), SecretAccessKey: types.StringValue("s2"), SessionToken: types.StringNull()}
-	got := secretsBody(next, prior)
-	want := map[string]string{"secret_access_key": "s2", "session_token": ""}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("update = %v, want %v", got, want)
+	got, _ := json.Marshal(secretsBody(next, prior))
+	if !jsonEqual(string(got), `{"secret_access_key":"s2","session_token":""}`) {
+		t.Fatalf("update = %s", got)
 	}
-	got = secretsBody(next, nil)
-	want = map[string]string{"access_key_id": "AKIA1", "secret_access_key": "s2"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("create = %v, want %v", got, want)
+	got, _ = json.Marshal(secretsBody(next, nil))
+	if !jsonEqual(string(got), `{"access_key_id":"AKIA1","secret_access_key":"s2"}`) {
+		t.Fatalf("create = %s", got)
+	}
+	if secretsBody(prior, prior) != nil {
+		t.Fatal("nothing changed: no secrets are sent")
 	}
 }
 
 func TestConnectionReadKeepsDerivedValuesOut(t *testing.T) {
-	conn := &client.Connection{
+	conn := &transcdr.Connection{
 		ID: "con_1", Name: "q", Kind: "sqs", Class: "messaging", Status: "ok", Enabled: true,
-		Config:     client.ConnectionConfig{QueueURL: str("https://sqs.eu-west-1.amazonaws.com/123456789012/q"), Region: str("eu-west-1")},
+		Config: transcdr.ConnectionConfig{
+			QueueURL: transcdr.Value("https://sqs.eu-west-1.amazonaws.com/123456789012/q"),
+			Region:   transcdr.Value("eu-west-1"),
+		},
 		SecretsSet: []string{"access_key_id"},
 	}
 	cfg := nullConfig()
