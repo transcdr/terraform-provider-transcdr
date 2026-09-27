@@ -41,7 +41,7 @@ resource "transcdr_automation" "ingest" {
 | **Resources** | `transcdr_connection`, `transcdr_automation`, `transcdr_event_destination`, `transcdr_preset`, `transcdr_api_key` |
 | **Data sources** | `transcdr_organization`, `transcdr_preset`, `transcdr_connection`, `transcdr_bucket_automation_setup` (local: IAM, queue and topic policies and S3 notification filters, identical to the dashboard's *Automate a bucket*) |
 | **Docs** | [`docs/`](docs/index.md), in the Terraform Registry layout |
-| **Examples** | [`examples/s3-sqs-queue-automation`](examples/s3-sqs-queue-automation), [`examples/s3-sns-fanout-hook`](examples/s3-sns-fanout-hook), [`examples/r2-watch-folder`](examples/r2-watch-folder), [`examples/presets-and-destinations`](examples/presets-and-destinations) |
+| **Examples** | [`examples/`](examples/README.md): which one to pick, how to run them, and how the pieces fit together. Complete pipelines: [`examples/s3-sqs-queue-automation`](examples/s3-sqs-queue-automation), [`examples/s3-sns-fanout-hook`](examples/s3-sns-fanout-hook), [`examples/r2-watch-folder`](examples/r2-watch-folder), [`examples/presets-and-destinations`](examples/presets-and-destinations) |
 
 ## Install
 
