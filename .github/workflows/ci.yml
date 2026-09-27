@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Our own runners (transcdr-infra/runners). Acceptance tests need a Transcdr API
+# and LocalStack, so they run locally: scripts/testacc-up.sh, scripts/testacc.sh.
+
+jobs:
+  go:
+    name: go (fmt, vet, test, build)
+    runs-on: transcdr-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: test -z "$(gofmt -l main.go internal)" || { gofmt -l main.go internal; exit 1; }
+
+      - name: go mod tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (unit; TF_ACC unset)
+        run: go test -count=1 ./...
+
+      - name: go build
+        run: go build -o /dev/null .
+
+  terraform:
+    name: examples and docs
+    runs-on: transcdr-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -recursive -check examples
+
+      - name: docs are up to date
+        run: |
+          go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.24.0 generate --provider-name transcdr
+          git diff --exit-code docs || { echo "docs/ is stale: run go generate (or the docs target in build/Dockerfile)"; exit 1; }
+
+      - name: goreleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check

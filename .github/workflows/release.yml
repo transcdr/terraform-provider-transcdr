@@ -1,0 +1,52 @@
+name: release
+
+# Registry-style signed releases. Push a tag v<semver> to build every platform,
+# write the SHA256SUMS file, sign it with GPG and draft a GitHub release the
+# Terraform Registry can ingest.
+#
+# Needs two repository secrets (see README "Releasing"):
+#   GPG_PRIVATE_KEY  the ASCII-armoured private key registered with the Registry
+#   PASSPHRASE       its passphrase
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: transcdr-linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check signing is configured
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY is not set: releases must be signed for the Terraform Registry (see README)."
+            exit 1
+          fi
+
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
