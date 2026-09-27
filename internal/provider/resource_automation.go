@@ -82,7 +82,10 @@ func (r *automationResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"- `watch` lists the source every `poll_interval_seconds` and takes files unchanged for `settle_seconds`.\n" +
 			"- `hook` takes pushes at the secret `hook_url`: `{\"path\": …}`, `{\"paths\": [...]}`, S3/R2/MinIO bucket notifications (directly or wrapped by SNS, whose subscription it confirms itself) or GCS notifications.\n" +
 			"- `queue` consumes an `sqs` connection (`trigger_connection_id`): S3 notifications sent to the queue directly or through an SNS topic, EventBridge `Object Created` events, `{\"path\"}` messages and `POST /v1/jobs` bodies.\n\n" +
-			"Each object version is processed exactly once. Use the `transcdr_bucket_automation_setup` data source for the IAM, queue and topic policies and the bucket notification.",
+			"Each object version is processed exactly once. Use the `transcdr_bucket_automation_setup` data source for the IAM, queue and topic policies and the bucket notification.\n\n" +
+			"**Removing a destination.** The API keeps an automation's destination when an update leaves it out, and has no way to clear it, so removing `destination` " +
+			"fails at plan time with an explanation instead of silently doing nothing. Keep a destination, or replace the automation with `terraform apply -replace=...`: " +
+			"a replaced automation has a new id and `hook_url`, and does not know which files the old one processed, so a `watch` automation takes every matching file again.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -150,7 +153,7 @@ func (r *automationResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"destination": schema.SingleNestedAttribute{
 				Optional: true,
 				MarkdownDescription: "Deliver every output file to a storage connection when the job completes. Omit it to keep outputs in Transcdr's storage. " +
-					"The API cannot remove a destination from an existing automation: see the note in the docs.",
+					"The API cannot remove a destination from an existing automation: see *Removing a destination* above.",
 				Attributes: map[string]schema.Attribute{
 					"connection_id": schema.StringAttribute{
 						Required:            true,

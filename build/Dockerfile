@@ -45,9 +45,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM scratch AS dist
 COPY --from=built /out/ /
 
+FROM hashicorp/terraform:1.14 AS terraform
+
 FROM base AS docs-gen
+COPY --from=terraform /bin/terraform /usr/local/bin/terraform
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    apt-get update -qq && apt-get install -y -qq unzip >/dev/null && \
     go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.24.0 generate --provider-name transcdr
 
 FROM scratch AS docs
