@@ -14,10 +14,8 @@
 #   * Terraform compares only the fields you wrote. Defaults filled in by the
 #     API never show up as changes, but a field someone edits in the
 #     dashboard does.
-#   * Changing a value updates the preset in place (same id).
-#   * Removing a field you had written replaces the preset (a new id; the slug
-#     carries over), because the API merges updates into the stored
-#     specification and would otherwise keep the old value.
+#   * Every change updates the preset in place (same id). Terraform sends the
+#     whole preset, so a field you remove goes back to its default.
 #
 # The specification's fields: mode (single | hls), codec (av1 | h264 | h265),
 # renditions [{width, height, bitrate?, label?}] or ladder {max_short_side},

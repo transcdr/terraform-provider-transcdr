@@ -66,7 +66,7 @@ func checkKeysRevoked(s *terraform.State) error {
 		if rs.Type != "transcdr_api_key" {
 			continue
 		}
-		k, err := findAPIKey(context.Background(), testClient(), rs.Primary.ID)
+		k, err := getAPIKey(context.Background(), testClient(), rs.Primary.ID)
 		if err != nil {
 			return err
 		}

@@ -7,7 +7,7 @@ description: |-
   Three triggers:
   watch lists the source every poll_interval_seconds and takes files unchanged for settle_seconds.hook takes pushes at the secret hook_url: {"path": …}, {"paths": [...]}, S3/R2/MinIO bucket notifications (directly or wrapped by SNS, whose subscription it confirms itself) or GCS notifications.queue consumes an sqs connection (trigger_connection_id): S3 notifications sent to the queue directly or through an SNS topic, EventBridge Object Created events, {"path"} messages and POST /v1/jobs bodies.
   Each object version is processed exactly once. Use the transcdr_bucket_automation_setup data source for the IAM, queue and topic policies and the bucket notification.
-  Removing a destination. The API keeps an automation's destination when an update leaves it out, and has no way to clear it, so removing destination fails at plan time with an explanation instead of silently doing nothing. Keep a destination, or replace the automation with terraform apply -replace=...: a replaced automation has a new id and hook_url, and does not know which files the old one processed, so a watch automation takes every matching file again.
+  Every argument updates in place. Removing an optional argument (destination, preset, output, metadata, webhook_url, trigger_connection_id) clears it; the automation keeps its id, hook_url and the record of the files it has processed.
 ---
 
 # transcdr_automation (Resource)
@@ -21,7 +21,7 @@ Three triggers:
 
 Each object version is processed exactly once. Use the `transcdr_bucket_automation_setup` data source for the IAM, queue and topic policies and the bucket notification.
 
-**Removing a destination.** The API keeps an automation's destination when an update leaves it out, and has no way to clear it, so removing `destination` fails at plan time with an explanation instead of silently doing nothing. Keep a destination, or replace the automation with `terraform apply -replace=...`: a replaced automation has a new id and `hook_url`, and does not know which files the old one processed, so a `watch` automation takes every matching file again.
+Every argument updates in place. Removing an optional argument (`destination`, `preset`, `output`, `metadata`, `webhook_url`, `trigger_connection_id`) clears it; the automation keeps its id, `hook_url` and the record of the files it has processed.
 
 ## Example Usage
 
@@ -109,7 +109,7 @@ resource "aws_sns_topic_subscription" "transcdr" {
 ### Optional
 
 - `after_success` (String) `keep` or `delete` the source file once its job completes. Default `keep`. `delete` needs `s3:DeleteObject` on the source.
-- `destination` (Attributes) Deliver every output file to a storage connection when the job completes. Omit it to keep outputs in Transcdr's storage. The API cannot remove a destination from an existing automation: see *Removing a destination* above. (see [below for nested schema](#nestedatt--destination))
+- `destination` (Attributes) Deliver every output file to a storage connection when the job completes. Omit it to keep outputs in Transcdr's storage; removing it stops delivering from the next job on. (see [below for nested schema](#nestedatt--destination))
 - `enabled` (Boolean) Whether the automation runs. Default true.
 - `hook_token_version` (Number) Any number. Changing it rotates the hook token: `hook_url` changes and the old URL stops working. Not sent to the API; setting it on create does not rotate.
 - `metadata` (Map of String) Metadata added to every job (up to 20 keys of ≤ 40 characters, values ≤ 500). Jobs also get `automation_id` and `source_path`.

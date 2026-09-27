@@ -44,8 +44,9 @@ Then set `TRANSCDR_API_KEY` in the environment (recommended), or `api_key` in th
 
 ## Behaviour
 
-- Reads, deletes and PUTs that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After` (`max_retries`, default 4). Creates and updates are sent once, since the API deduplicates retried creates only for jobs and uploads.
+- Reads, creates, deletes and PUTs that fail with 429 or 5xx, or cannot connect, are retried with exponential backoff and jitter, honouring `Retry-After` (`max_retries`, default 4). Every create carries an `Idempotency-Key`, so a retried create never makes a duplicate. PATCH updates are sent once.
+- Removing an optional argument clears it in place (an automation's `destination`, `preset`, `output`, `metadata` or `webhook_url`, an event destination's `aws.endpoint` or `aws.message_group_id`). A preset is updated as a whole, so a field removed from `output` goes back to its default.
 - API errors come back as diagnostics with the API's message, each field error (attached to the attribute when it names one) and the request id to quote to support.
-- Secrets (`transcdr_connection.secrets`, `transcdr_event_destination.aws.secret_access_key`) are write-only in the API. Terraform keeps the configured values and sends them again when they change, which is how you rotate them. Signing secrets, hook URLs and API key secrets are computed and sensitive, and rotate when you change `secret_version` or `hook_token_version`, or when the key is replaced.
+- Secrets (`transcdr_connection.secrets`, `transcdr_event_destination.aws.secret_access_key`) are write-only in the API. Terraform keeps the configured values and sends them again when they change, which is how you rotate them. The API returns a fingerprint of each secret: when a refresh finds one changed outside Terraform, the provider warns and the next plan sets the configured value again. Signing secrets, hook URLs and API key secrets are computed and sensitive, and rotate when you change `secret_version` or `hook_token_version`, or when the key is replaced.
 
 {{ .SchemaMarkdown | trimspace }}

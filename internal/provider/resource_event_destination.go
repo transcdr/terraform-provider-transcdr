@@ -78,7 +78,10 @@ func (r *eventDestinationResource) Schema(_ context.Context, _ resource.SchemaRe
 			"It targets an HTTPS URL (`url`), an Amazon SNS topic (`topic_arn` + `aws`) or an Amazon SQS queue (`queue_url` + `aws`), " +
 			"or names a messaging connection (`connection_id`) that holds the target and credentials. Needs a plan with the `webhooks` feature.\n\n" +
 			"Every delivery is signed with `signing_secret`: HTTPS in the `Transcdr-Signature` header, SNS and SQS in the `transcdr-signature` message attribute.\n\n" +
-			"`aws.secret_access_key` is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it.",
+			"`aws.secret_access_key` is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it. " +
+			"The API returns a fingerprint of each secret that changes whenever the secret does. When a refresh finds `aws.secret_access_key` changed outside Terraform, " +
+			"it warns and the next plan sets the configured value again; when it finds the signing secret rotated outside Terraform, `signing_secret` is cleared " +
+			"(change `secret_version` to rotate it again and learn the new value).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -121,13 +124,11 @@ func (r *eventDestinationResource) Schema(_ context.Context, _ resource.SchemaRe
 					},
 					"endpoint": schema.StringAttribute{
 						Optional:            true,
-						MarkdownDescription: "`sns` only: an SNS-compatible service endpoint instead of AWS's. (An SQS queue URL is its own endpoint.) Removing it replaces the endpoint, since the API cannot clear it.",
-						PlanModifiers:       []planmodifier.String{requiresReplaceWhenRemoved()},
+						MarkdownDescription: "`sns` only: an SNS-compatible service endpoint instead of AWS's. (An SQS queue URL is its own endpoint.) Removing it goes back to AWS.",
 					},
 					"message_group_id": schema.StringAttribute{
 						Optional:            true,
-						MarkdownDescription: "FIFO topics and queues: the message group (the API's default is `transcdr`). Removing it replaces the endpoint, since the API cannot clear it.",
-						PlanModifiers:       []planmodifier.String{requiresReplaceWhenRemoved()},
+						MarkdownDescription: "FIFO topics and queues: the message group (the API's default is `transcdr`). Removing it clears it.",
 					},
 				},
 			},
@@ -299,6 +300,7 @@ func (r *eventDestinationResource) Create(ctx context.Context, req resource.Crea
 	state.fromAPI(w, &plan)
 	state.SigningSecret = strOrNull(secret)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, w.Secrets)...)
 }
 
 func (r *eventDestinationResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -318,7 +320,24 @@ func (r *eventDestinationResource) Read(ctx context.Context, req resource.ReadRe
 	}
 	prior := state
 	state.fromAPI(w, &prior)
+	saved, ok, d := savedFingerprints(ctx, req.Private)
+	resp.Diagnostics.Append(d...)
+	if ok {
+		changed := changedSecrets(saved, w.Secrets)
+		if changed["secret_access_key"] && state.AWS != nil && known(state.AWS.SecretAccessKey) {
+			// Dropped from state, so the next plan sends the configured key again.
+			state.AWS.SecretAccessKey = types.StringNull()
+			secretDriftWarning(&resp.Diagnostics, "event destination "+w.ID, []string{"aws.secret_access_key"})
+		}
+		if changed["secret"] && known(state.SigningSecret) {
+			state.SigningSecret = types.StringNull()
+			resp.Diagnostics.AddWarning("Signing secret rotated outside Terraform",
+				"The event destination "+w.ID+"'s signing secret was rotated outside Terraform, so signing_secret no longer holds it and is now empty. "+
+					"Change secret_version to rotate it again and record the new value.")
+		}
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, w.Secrets)...)
 }
 
 func (r *eventDestinationResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -328,7 +347,7 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	in := transcdr.WebhookUpdateParams{Description: ptr(plan.Description), Enabled: boolPtr(plan.Enabled)}
+	in := transcdr.WebhookUpdateParams{Description: transcdr.Value(plan.Description.ValueString()), Enabled: boolPtr(plan.Enabled)}
 	in.Events = setStrings(ctx, plan.Events, &resp.Diagnostics)
 	if !plan.URL.Equal(state.URL) {
 		in.URL = ptr(plan.URL)
@@ -340,11 +359,16 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 		in.QueueURL = ptr(plan.QueueURL)
 	}
 	if plan.AWS != nil && (state.AWS == nil || *plan.AWS != *state.AWS) {
+		// An endpoint or message group set before and removed now is sent as null, which clears it.
+		prior := awsModel{Endpoint: types.StringNull(), MessageGroupID: types.StringNull()}
+		if state.AWS != nil {
+			prior = *state.AWS
+		}
 		in.AWS = &transcdr.WebhookAWSParams{
 			AccessKeyID:    ptr(plan.AWS.AccessKeyID),
 			Region:         ptr(plan.AWS.Region),
-			Endpoint:       nullableString(plan.AWS.Endpoint),
-			MessageGroupID: nullableString(plan.AWS.MessageGroupID),
+			Endpoint:       orClear(plan.AWS.Endpoint, known(prior.Endpoint)),
+			MessageGroupID: orClear(plan.AWS.MessageGroupID, known(prior.MessageGroupID)),
 		}
 		if state.AWS == nil || !plan.AWS.SecretAccessKey.Equal(state.AWS.SecretAccessKey) {
 			in.AWS.SecretAccessKey = ptr(plan.AWS.SecretAccessKey)
@@ -369,6 +393,7 @@ func (r *eventDestinationResource) Update(ctx context.Context, req resource.Upda
 	next.fromAPI(w, &plan)
 	next.SigningSecret = secret
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, w.Secrets)...)
 }
 
 func (r *eventDestinationResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -447,16 +472,4 @@ func firstNonNil(values ...*string) *string {
 		}
 	}
 	return nil
-}
-
-// requiresReplaceWhenRemoved replaces the resource when a value that was set is removed: the API
-// keeps the stored value when an update leaves it out, and has no way to clear it.
-func requiresReplaceWhenRemoved() planmodifier.String {
-	return stringplanmodifier.RequiresReplaceIf(
-		func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
-			resp.RequiresReplace = known(req.StateValue) && req.ConfigValue.IsNull()
-		},
-		"Removing this value replaces the resource: the API cannot clear it in place.",
-		"Removing this value replaces the resource: the API cannot clear it in place.",
-	)
 }

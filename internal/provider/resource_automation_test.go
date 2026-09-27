@@ -55,7 +55,7 @@ resource "transcdr_connection" "queue" {
 func TestAccAutomation(t *testing.T) {
 	suffix := acctest.RandomWithPrefix("tfacc")
 	r := "transcdr_automation.test"
-	var hookURL string
+	var hookURL, id string
 
 	minimal := testAccAutomationBase(suffix) + fmt.Sprintf(`
 resource "transcdr_automation" "test" {
@@ -129,6 +129,7 @@ resource "transcdr_automation" "test" {
 					resource.TestCheckNoResourceAttr(r, "output"),
 					resource.TestMatchResourceAttr(r, "hook_url", regexp.MustCompile(`/v1/hooks/automations/ahk_`)),
 					resource.TestCheckResourceAttrWith(r, "hook_url", capture(&hookURL)),
+					resource.TestCheckResourceAttrWith(r, "id", capture(&id)),
 				),
 			},
 			// Every field, and a queue trigger.
@@ -195,10 +196,30 @@ resource "transcdr_automation" "test" {
 					resource.TestCheckResourceAttrWith(r, "hook_url", same(&hookURL)),
 				),
 			},
-			// The API cannot remove a destination: the plan says so instead of silently keeping it.
+			// Removing the destination clears it in place: same id, same hook URL.
 			{
-				Config:      minimal,
-				ExpectError: regexp.MustCompile(`cannot remove an automation's destination`),
+				Config: testAccAutomationBase(suffix) + fmt.Sprintf(`
+resource "transcdr_automation" "test" {
+  name               = "tfacc %s"
+  trigger            = "hook"
+  hook_token_version = 1
+  source = {
+    connection_id = transcdr_connection.bucket.id
+    prefix        = "incoming/"
+  }
+}
+`, suffix),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr(r, "destination"),
+					resource.TestCheckResourceAttrWith(r, "id", same(&id)),
+					resource.TestCheckResourceAttrWith(r, "hook_url", same(&hookURL)),
+					checkAPI("/v1/automations/", r, func(obj map[string]any) error {
+						if obj["destination"] != nil {
+							return fmt.Errorf("the API still has destination %v", obj["destination"])
+						}
+						return nil
+					}),
+				),
 			},
 		},
 	})

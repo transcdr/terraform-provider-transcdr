@@ -168,9 +168,10 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 		MarkdownDescription: "A connection: **storage** (`s3`, `gcs`, `azure_blob`, `ftp`, `ftps`, `sftp`, `http`, `webdav`) where inputs come from and outputs go, " +
 			"or **messaging** (`sqs`, `sns`, `webhook`) that receives events; an `sqs` connection can also trigger queue automations. Needs the Starter plan or above.\n\n" +
 			"Transcdr tries the credentials when the connection is saved and records the outcome in `status` and `last_error`.\n\n" +
-			"**Secrets are write-only.** The API never returns them, so Terraform keeps the values from your configuration, and cannot see a secret changed outside Terraform. " +
+			"**Secrets are write-only.** The API never returns them, so Terraform keeps the values from your configuration. " +
 			"To rotate a credential, change its value here and apply. Removing a secret from the configuration clears it. " +
-			"If a secret Terraform set is no longer stored (see `secrets_set`), the next plan puts it back.",
+			"The API does return a fingerprint of each secret that is set, which changes whenever the secret does: Terraform records it, " +
+			"and when a refresh finds a secret it set changed or cleared outside Terraform, it warns and the next plan sets the configured value again.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -395,6 +396,7 @@ func (r *connectionResource) Create(ctx context.Context, req resource.CreateRequ
 	state := plan
 	resp.Diagnostics.Append(state.fromAPI(conn, &plan, true)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, conn.Secrets)...)
 }
 
 func (r *connectionResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -414,7 +416,22 @@ func (r *connectionResource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 	prior := state
 	resp.Diagnostics.Append(state.fromAPI(conn, &prior, false)...)
+	saved, ok, d := savedFingerprints(ctx, req.Private)
+	resp.Diagnostics.Append(d...)
+	if ok && state.Secrets != nil {
+		// A secret changed outside Terraform: drop it from state so the next plan sends it again.
+		changed := changedSecrets(saved, conn.Secrets)
+		var names []string
+		for _, f := range state.Secrets.fields() {
+			if known(*f.value) && changed[f.name] {
+				*f.value = types.StringNull()
+				names = append(names, f.name)
+			}
+		}
+		secretDriftWarning(&resp.Diagnostics, "connection "+conn.Name, names)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, conn.Secrets)...)
 }
 
 func (r *connectionResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -455,6 +472,7 @@ func (r *connectionResource) Update(ctx context.Context, req resource.UpdateRequ
 	next.ID = state.ID
 	resp.Diagnostics.Append(next.fromAPI(conn, &plan, true)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
+	resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, conn.Secrets)...)
 }
 
 func orEmpty(s *connectionSecrets) *connectionSecrets {

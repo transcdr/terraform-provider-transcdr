@@ -152,3 +152,47 @@ func same(before *string) func(string) error {
 		return nil
 	}
 }
+
+// checkAPI reads a resource's object straight from the API (pathPrefix + its id) and checks it.
+func checkAPI(pathPrefix, address string, check func(obj map[string]any) error) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[address]
+		if !ok {
+			return fmt.Errorf("%s is not in the state", address)
+		}
+		var obj map[string]any
+		if err := testClient().Do(context.Background(), "GET", pathPrefix+rs.Primary.ID, nil, &obj); err != nil {
+			return err
+		}
+		return check(obj)
+	}
+}
+
+// fingerprint is a write-only secret's fingerprint in an API object's `secrets`, or "".
+func fingerprint(obj map[string]any, name string) string {
+	secrets, _ := obj["secrets"].(map[string]any)
+	s, _ := secrets[name].(map[string]any)
+	fp, _ := s["fingerprint"].(string)
+	return fp
+}
+
+// captureFingerprint stores a resource's secret fingerprint as the API has it.
+func captureFingerprint(pathPrefix, address, name string, target *string) resource.TestCheckFunc {
+	return checkAPI(pathPrefix, address, func(obj map[string]any) error {
+		if *target = fingerprint(obj, name); *target == "" {
+			return fmt.Errorf("%s has no fingerprint for %s", address, name)
+		}
+		return nil
+	})
+}
+
+// sameFingerprint checks that a secret's fingerprint is the captured one: the secret is the one
+// Terraform set.
+func sameFingerprint(pathPrefix, address, name string, before *string) resource.TestCheckFunc {
+	return checkAPI(pathPrefix, address, func(obj map[string]any) error {
+		if fp := fingerprint(obj, name); fp != *before {
+			return fmt.Errorf("%s: %s fingerprint %q, want %q", address, name, fp, *before)
+		}
+		return nil
+	})
+}

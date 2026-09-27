@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   An event destination (a webhook endpoint, /v1/webhooks): where Transcdr sends events such as job.completed. It targets an HTTPS URL (url), an Amazon SNS topic (topic_arn + aws) or an Amazon SQS queue (queue_url + aws), or names a messaging connection (connection_id) that holds the target and credentials. Needs a plan with the webhooks feature.
   Every delivery is signed with signing_secret: HTTPS in the Transcdr-Signature header, SNS and SQS in the transcdr-signature message attribute.
-  aws.secret_access_key is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it.
+  aws.secret_access_key is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it. The API returns a fingerprint of each secret that changes whenever the secret does. When a refresh finds aws.secret_access_key changed outside Terraform, it warns and the next plan sets the configured value again; when it finds the signing secret rotated outside Terraform, signing_secret is cleared (change secret_version to rotate it again and learn the new value).
 ---
 
 # transcdr_event_destination (Resource)
@@ -14,7 +14,7 @@ An event destination (a webhook endpoint, `/v1/webhooks`): where Transcdr sends 
 
 Every delivery is signed with `signing_secret`: HTTPS in the `Transcdr-Signature` header, SNS and SQS in the `transcdr-signature` message attribute.
 
-`aws.secret_access_key` is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it.
+`aws.secret_access_key` is write-only: Terraform keeps the configured value and sends it again only when it changes, which is how you rotate it. The API returns a fingerprint of each secret that changes whenever the secret does. When a refresh finds `aws.secret_access_key` changed outside Terraform, it warns and the next plan sets the configured value again; when it finds the signing secret rotated outside Terraform, `signing_secret` is cleared (change `secret_version` to rotate it again and learn the new value).
 
 ## Example Usage
 
@@ -94,8 +94,8 @@ Required:
 
 Optional:
 
-- `endpoint` (String) `sns` only: an SNS-compatible service endpoint instead of AWS's. (An SQS queue URL is its own endpoint.) Removing it replaces the endpoint, since the API cannot clear it.
-- `message_group_id` (String) FIFO topics and queues: the message group (the API's default is `transcdr`). Removing it replaces the endpoint, since the API cannot clear it.
+- `endpoint` (String) `sns` only: an SNS-compatible service endpoint instead of AWS's. (An SQS queue URL is its own endpoint.) Removing it goes back to AWS.
+- `message_group_id` (String) FIFO topics and queues: the message group (the API's default is `transcdr`). Removing it clears it.
 - `region` (String) Read from the topic ARN or queue URL when omitted.
 
 ## Import

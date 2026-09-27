@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -133,20 +132,6 @@ func TestProjectedOutput(t *testing.T) {
 	out, _ = projectedOutput(`{"renditions":[{"width":1920,"height":1080}]}`, api)
 	if !jsonEqual(out, `{"renditions":[{"bitrate":"6M","height":1080,"width":1920},{"height":720,"width":1280}]}`) {
 		t.Fatalf("projection = %s", out)
-	}
-}
-
-func TestRemovedJSONPaths(t *testing.T) {
-	got := removedJSONPaths(
-		`{"codec":"h264","quality":{"target":"cbr","bitrate":"3M","buffer_ms":1000},"renditions":[{"width":1280,"height":720}],"gop":48}`,
-		`{"codec":"av1","quality":{"target":"high"},"renditions":[{"width":1920,"height":1080}]}`,
-	)
-	want := []string{"gop", "quality.bitrate", "quality.buffer_ms"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("removed = %v, want %v", got, want)
-	}
-	if got := removedJSONPaths(`{"codec":"h264"}`, `{"codec":"av1","gop":48}`); len(got) != 0 {
-		t.Fatalf("nothing removed, got %v", got)
 	}
 }
 

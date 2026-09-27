@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   A connection: storage (s3, gcs, azure_blob, ftp, ftps, sftp, http, webdav) where inputs come from and outputs go, or messaging (sqs, sns, webhook) that receives events; an sqs connection can also trigger queue automations. Needs the Starter plan or above.
   Transcdr tries the credentials when the connection is saved and records the outcome in status and last_error.
-  Secrets are write-only. The API never returns them, so Terraform keeps the values from your configuration, and cannot see a secret changed outside Terraform. To rotate a credential, change its value here and apply. Removing a secret from the configuration clears it. If a secret Terraform set is no longer stored (see secrets_set), the next plan puts it back.
+  Secrets are write-only. The API never returns them, so Terraform keeps the values from your configuration. To rotate a credential, change its value here and apply. Removing a secret from the configuration clears it. The API does return a fingerprint of each secret that is set, which changes whenever the secret does: Terraform records it, and when a refresh finds a secret it set changed or cleared outside Terraform, it warns and the next plan sets the configured value again.
 ---
 
 # transcdr_connection (Resource)
@@ -14,7 +14,7 @@ A connection: **storage** (`s3`, `gcs`, `azure_blob`, `ftp`, `ftps`, `sftp`, `ht
 
 Transcdr tries the credentials when the connection is saved and records the outcome in `status` and `last_error`.
 
-**Secrets are write-only.** The API never returns them, so Terraform keeps the values from your configuration, and cannot see a secret changed outside Terraform. To rotate a credential, change its value here and apply. Removing a secret from the configuration clears it. If a secret Terraform set is no longer stored (see `secrets_set`), the next plan puts it back.
+**Secrets are write-only.** The API never returns them, so Terraform keeps the values from your configuration. To rotate a credential, change its value here and apply. Removing a secret from the configuration clears it. The API does return a fingerprint of each secret that is set, which changes whenever the secret does: Terraform records it, and when a refresh finds a secret it set changed or cleared outside Terraform, it warns and the next plan sets the configured value again.
 
 ## Example Usage
 

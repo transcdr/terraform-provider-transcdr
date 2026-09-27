@@ -83,9 +83,8 @@ func (r *automationResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"- `hook` takes pushes at the secret `hook_url`: `{\"path\": …}`, `{\"paths\": [...]}`, S3/R2/MinIO bucket notifications (directly or wrapped by SNS, whose subscription it confirms itself) or GCS notifications.\n" +
 			"- `queue` consumes an `sqs` connection (`trigger_connection_id`): S3 notifications sent to the queue directly or through an SNS topic, EventBridge `Object Created` events, `{\"path\"}` messages and `POST /v1/jobs` bodies.\n\n" +
 			"Each object version is processed exactly once. Use the `transcdr_bucket_automation_setup` data source for the IAM, queue and topic policies and the bucket notification.\n\n" +
-			"**Removing a destination.** The API keeps an automation's destination when an update leaves it out, and has no way to clear it, so removing `destination` " +
-			"fails at plan time with an explanation instead of silently doing nothing. Keep a destination, or replace the automation with `terraform apply -replace=...`: " +
-			"a replaced automation has a new id and `hook_url`, and does not know which files the old one processed, so a `watch` automation takes every matching file again.",
+			"Every argument updates in place. Removing an optional argument (`destination`, `preset`, `output`, `metadata`, `webhook_url`, `trigger_connection_id`) clears it; " +
+			"the automation keeps its id, `hook_url` and the record of the files it has processed.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -152,8 +151,8 @@ func (r *automationResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"destination": schema.SingleNestedAttribute{
 				Optional: true,
-				MarkdownDescription: "Deliver every output file to a storage connection when the job completes. Omit it to keep outputs in Transcdr's storage. " +
-					"The API cannot remove a destination from an existing automation: see *Removing a destination* above.",
+				MarkdownDescription: "Deliver every output file to a storage connection when the job completes. Omit it to keep outputs in Transcdr's storage; " +
+					"removing it stops delivering from the next job on.",
 				Attributes: map[string]schema.Attribute{
 					"connection_id": schema.StringAttribute{
 						Required:            true,
@@ -269,20 +268,15 @@ func (r *automationResource) ModifyPlan(ctx context.Context, req resource.Modify
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if state.Destination != nil && plan.Destination == nil {
-		resp.Diagnostics.AddAttributeError(path.Root("destination"), "The API cannot remove an automation's destination",
-			"PATCH /v1/automations/{id} ignores `destination: null`, so a destination cannot be removed in place. Either keep a destination, "+
-				"or replace the automation with `terraform apply -replace=<address>`. A replaced automation gets a new id and hook_url, "+
-				"and forgets which files it has processed: a watch automation takes every matching file in the source again.")
-	}
 	// The hook URL changes only when the token is rotated.
 	if known(state.HookURL) && plan.HookTokenVersion.Equal(state.HookTokenVersion) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("hook_url"), state.HookURL)...)
 	}
 }
 
-// params is the create (prior nil) or update request. Updates send every field, with the API's
-// way of clearing one ("" or {}), except trigger_connection_id, sent only when it changes.
+// params is the create (prior nil) or update request. Updates send every field, with null for an
+// optional one that is not set (which clears it), except trigger_connection_id, sent only when it
+// changes.
 func (m *automationModel) params(ctx context.Context, prior *automationModel, diags *diag.Diagnostics) *transcdr.AutomationParams {
 	p := &transcdr.AutomationParams{
 		Name:                m.Name.ValueString(),
@@ -300,42 +294,44 @@ func (m *automationModel) params(ctx context.Context, prior *automationModel, di
 	}
 	// Only on change: naming the queue re-checks that its connection is enabled.
 	if prior == nil || !m.TriggerConnectionID.Equal(prior.TriggerConnectionID) {
-		if known(m.TriggerConnectionID) {
-			p.TriggerConnectionID = transcdr.String(m.TriggerConnectionID.ValueString())
-		} else if prior != nil {
-			p.TriggerConnectionID = transcdr.String("")
-		}
+		p.TriggerConnectionID = orClear(m.TriggerConnectionID, prior != nil)
 	}
-	switch {
-	case known(m.Preset):
-		p.Preset = transcdr.String(m.Preset.ValueString())
-	case prior != nil:
-		p.Preset = transcdr.String("")
-	}
+	p.Preset = orClear(m.Preset, prior != nil)
+	p.WebhookURL = orClear(m.WebhookURL, prior != nil)
 	switch {
 	case known(m.Output):
-		p.Output = transcdr.RawOutputSpec([]byte(m.Output.ValueString()))
+		p.Output = transcdr.Value(transcdr.RawOutputSpec([]byte(m.Output.ValueString())))
 	case prior != nil:
-		p.Output = transcdr.RawOutputSpec([]byte("{}"))
-	}
-	if m.Destination != nil {
-		p.Destination = transcdr.Value(transcdr.JobDestination{
-			ConnectionID: m.Destination.ConnectionID.ValueString(),
-			Prefix:       m.Destination.Prefix.ValueString(),
-		})
-	}
-	if known(m.Metadata) {
-		p.Metadata = mapStrings(ctx, m.Metadata, diags)
-	} else if prior != nil {
-		p.Metadata = transcdr.Metadata{}
+		p.Output = transcdr.Null[*transcdr.OutputSpecInput]()
 	}
 	switch {
-	case known(m.WebhookURL):
-		p.WebhookURL = transcdr.String(m.WebhookURL.ValueString())
+	case m.Destination != nil:
+		dest := transcdr.JobDestination{ConnectionID: m.Destination.ConnectionID.ValueString()}
+		if known(m.Destination.Prefix) {
+			dest.Prefix = m.Destination.Prefix.ValueString()
+		}
+		p.Destination = transcdr.Value(dest)
 	case prior != nil:
-		p.WebhookURL = transcdr.String("")
+		p.Destination = transcdr.Null[transcdr.JobDestination]()
+	}
+	switch {
+	case known(m.Metadata):
+		p.Metadata = transcdr.Value(transcdr.Metadata(mapStrings(ctx, m.Metadata, diags)))
+	case prior != nil:
+		p.Metadata = transcdr.Null[transcdr.Metadata]()
 	}
 	return p
+}
+
+// orClear is v's value, or on an update (clear) null when v is not set.
+func orClear(v types.String, clear bool) transcdr.Nullable[string] {
+	switch {
+	case known(v):
+		return transcdr.Value(v.ValueString())
+	case clear:
+		return transcdr.Null[string]()
+	}
+	return transcdr.Nullable[string]{}
 }
 
 func (r *automationResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

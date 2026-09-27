@@ -21,7 +21,7 @@ Use the preset ids from `terraform output presets` as a job's or automation's `p
 
 ## How preset outputs are compared
 
-You write only the fields you want. The API fills in the rest, and `resolved_output` shows the full specification. Terraform compares only the fields you set, so API defaults never show up as drift, but a field changed outside Terraform does. Changing a value updates the preset in place. Removing a field you had set replaces the preset, because the API merges updates into the stored specification. The slug carries over to the new preset, so references by slug keep working.
+You write only the fields you want. The API fills in the rest, and `resolved_output` shows the full specification. Terraform compares only the fields you set, so API defaults never show up as drift, but a field changed outside Terraform does. Every change updates the preset in place, keeping its id: Terraform sends the whole preset (`PUT`), so a field you remove goes back to its default.
 
 ## Verifying deliveries
 

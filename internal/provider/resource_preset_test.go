@@ -82,13 +82,43 @@ func TestAccPreset_cbr(t *testing.T) {
 				PlanOnly:           true,
 				ExpectNonEmptyPlan: true,
 			},
-			// A removed field replaces the preset: an update would merge and keep it.
+			// A removed field goes back to its default, in place: the whole preset is sent (PUT).
 			{
 				Config: testAccCBRPreset(name, "Constant bit rate, 5M", `{ target = "cbr", bitrate = "5M" }`),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrWith(r, "id", differs(&id)),
+					resource.TestCheckResourceAttrWith(r, "id", same(&id)),
 					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"bitrate":"5M"`)),
 					resource.TestCheckResourceAttr(r, "slug", name),
+					checkAPI("/v1/presets/", r, func(obj map[string]any) error {
+						q, _ := obj["output"].(map[string]any)["quality"].(map[string]any)
+						if q["buffer_ms"] == float64(1500) {
+							return fmt.Errorf("buffer_ms kept its old value: %v", q)
+						}
+						return nil
+					}),
+				),
+			},
+			// Removing the description, the metadata and whole output fields clears them in place.
+			{
+				Config: configHeader(false) + fmt.Sprintf(`
+resource "transcdr_preset" "test" {
+  name   = %q
+  output = jsonencode({ mode = "hls", codec = "h264" })
+}
+`, name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(r, "id", same(&id)),
+					resource.TestCheckResourceAttr(r, "description", ""),
+					resource.TestCheckNoResourceAttr(r, "metadata.%"),
+					resource.TestCheckResourceAttr(r, "slug", name),
+					checkAPI("/v1/presets/", r, func(obj map[string]any) error {
+						out := obj["output"].(map[string]any)
+						q, _ := out["quality"].(map[string]any)
+						if q["target"] == "cbr" || obj["description"] != "" || len(obj["metadata"].(map[string]any)) != 0 {
+							return fmt.Errorf("not replaced: description %v, metadata %v, quality %v", obj["description"], obj["metadata"], q)
+						}
+						return nil
+					}),
 				),
 			},
 		},

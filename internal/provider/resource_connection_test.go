@@ -8,6 +8,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 func testAccS3ConnectionConfig(bucket, name, root string, enabled bool, secret string) string {
@@ -40,6 +42,7 @@ func TestAccConnection_s3(t *testing.T) {
 	bucket := acctest.RandomWithPrefix("tfacc")
 	name := "tfacc " + bucket
 	r := "transcdr_connection.test"
+	var id, fp string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
@@ -88,6 +91,30 @@ func TestAccConnection_s3(t *testing.T) {
 					resource.TestCheckResourceAttr(r, "enabled", "true"),
 					resource.TestCheckResourceAttr(r, "secrets.secret_access_key", testSecretAccessKey+"2"),
 					resource.TestCheckNoResourceAttr(r, "disabled_reason"),
+					resource.TestCheckResourceAttrWith(r, "id", capture(&id)),
+					captureFingerprint("/v1/connections/", r, "secret_access_key", &fp),
+				),
+			},
+			// Drift: a secret replaced outside Terraform. Its fingerprint changes, so the plan sends
+			// the configured value again, and applying restores it (the same fingerprint as before).
+			{
+				PreConfig: func() {
+					_, err := testClient().Connections.Update(context.Background(), id, &transcdr.ConnectionUpdateParams{
+						Secrets: &transcdr.ConnectionSecrets{SecretAccessKey: transcdr.String(testSecretAccessKey + "-elsewhere")},
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:             testAccS3ConnectionConfig(bucket, name, "", true, testSecretAccessKey+"2"),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: testAccS3ConnectionConfig(bucket, name, "", true, testSecretAccessKey+"2"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(r, "secrets.secret_access_key", testSecretAccessKey+"2"),
+					sameFingerprint("/v1/connections/", r, "secret_access_key", &fp),
 				),
 			},
 			// Drift: turned off outside Terraform, the plan turns it back on.

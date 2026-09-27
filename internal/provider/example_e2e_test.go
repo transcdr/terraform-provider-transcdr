@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/config"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -108,6 +110,7 @@ func TestAccExample_s3SQSQueueAutomation(t *testing.T) {
 		"name":                 config.StringVariable(name),
 		"iam_propagation_wait": config.StringVariable("0s"),
 	}
+	var presetID string
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() { testAccPreCheck(t) },
 		Steps: []resource.TestStep{
@@ -121,7 +124,29 @@ func TestAccExample_s3SQSQueueAutomation(t *testing.T) {
 					resource.TestCheckResourceAttr("transcdr_connection.bucket", "status", "ok"),
 					resource.TestCheckResourceAttr("transcdr_connection.queue", "status", "ok"),
 					resource.TestCheckResourceAttr("transcdr_event_destination.completions", "type", "sns"),
+					resource.TestCheckResourceAttrPair("transcdr_event_destination.completions", "target", "aws_sns_topic.events", "arn"),
+					resource.TestCheckResourceAttrPair("transcdr_automation.ingest", "preset", "transcdr_preset.delivery", "id"),
+					resource.TestMatchResourceAttr("transcdr_preset.delivery", "resolved_output", regexp.MustCompile(`"codec":"h264"`)),
 					uploadAndExpectJob("incoming/e2e/talk.mp4"),
+					resource.TestCheckResourceAttrWith("transcdr_preset.delivery", "id", capture(&presetID)),
+				),
+			},
+			// Changing the pipeline's codec updates the preset in place; nothing else changes.
+			{
+				ProtoV6ProviderFactories: testAccProviders,
+				ConfigDirectory:          config.StaticDirectory(dir),
+				ConfigVariables:          withVar(vars, "codec", config.StringVariable("av1")),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("transcdr_preset.delivery", plancheck.ResourceActionUpdate),
+						plancheck.ExpectResourceAction("transcdr_automation.ingest", plancheck.ResourceActionNoop),
+						plancheck.ExpectResourceAction("transcdr_connection.bucket", plancheck.ResourceActionNoop),
+						plancheck.ExpectResourceAction("transcdr_event_destination.completions", plancheck.ResourceActionNoop),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith("transcdr_preset.delivery", "id", same(&presetID)),
+					resource.TestMatchResourceAttr("transcdr_preset.delivery", "resolved_output", regexp.MustCompile(`"codec":"av1"`)),
 				),
 			},
 		},
@@ -136,6 +161,7 @@ func uploadAndExpectJob(key string) resource.TestCheckFunc {
 		bucket := s.RootModule().Resources["aws_s3_bucket.media"].Primary.Attributes["bucket"]
 		automation := s.RootModule().Resources["transcdr_automation.ingest"].Primary.ID
 		source := s.RootModule().Resources["transcdr_connection.bucket"].Primary.ID
+		preset := s.RootModule().Resources["transcdr_preset.delivery"].Primary.ID
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/%s/%s", localstackURL(), bucket, key), bytes.NewReader([]byte("not really a video")))
 		if err != nil {
@@ -183,6 +209,9 @@ func uploadAndExpectJob(key string) resource.TestCheckFunc {
 				if job.Metadata["automation_id"] != automation || job.Metadata["source_path"] != key {
 					return fmt.Errorf("job %s metadata = %v", job.ID, job.Metadata)
 				}
+				if job.PresetID == nil || *job.PresetID != preset {
+					return fmt.Errorf("job %s preset = %v, want %s", job.ID, deref(job.PresetID), preset)
+				}
 				return nil
 			}
 			if time.Now().After(deadline) {
@@ -198,4 +227,15 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// withVar is vars with one more (or a replaced) variable.
+func withVar(vars config.Variables, name string, value config.Variable) config.Variables {
+	out := config.Variables{name: value}
+	for k, v := range vars {
+		if k != name {
+			out[k] = v
+		}
+	}
+	return out
 }

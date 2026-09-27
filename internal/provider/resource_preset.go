@@ -78,8 +78,7 @@ func (r *presetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				CustomType: jsontypes.NormalizedType{},
 				Required:   true,
 				MarkdownDescription: "The output specification as JSON (`jsonencode({...})`), merged over the defaults and validated against the plan's limits. " +
-					"Changing a value updates the preset in place. Removing a field you had set replaces the preset (new id; references by slug keep working), " +
-					"because the API merges updates into the stored specification and would keep the old value.",
+					"Every change updates the preset in place: the whole specification is sent again, so a field removed here goes back to its default.",
 			},
 			"metadata": schema.MapAttribute{
 				Optional:            true,
@@ -134,12 +133,9 @@ func (r *presetResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 	if resp.Diagnostics.HasError() || !known(plan.Output) || !known(state.Output) {
 		return
 	}
+	// The resolved specification changes only with the output.
 	if jsonEqual(plan.Output.ValueString(), state.Output.ValueString()) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("resolved_output"), state.ResolvedOutput)...)
-		return
-	}
-	if removed := removedJSONPaths(state.Output.ValueString(), plan.Output.ValueString()); len(removed) > 0 {
-		resp.RequiresReplace = append(resp.RequiresReplace, path.Root("output"))
 	}
 }
 
@@ -199,16 +195,18 @@ func (r *presetResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	params := transcdr.PresetUpdateParams{
-		Name:        transcdr.String(plan.Name.ValueString()),
+	// PUT replaces the whole preset: the output is merged over the defaults, not over the stored
+	// specification, so a field removed from the configuration goes back to its default.
+	params := transcdr.PresetReplaceParams{
+		Name:        plan.Name.ValueString(),
 		Slug:        ptr(plan.Slug),
-		Description: transcdr.String(plan.Description.ValueString()),
-		Metadata:    mapStrings(ctx, plan.Metadata, &resp.Diagnostics),
+		Description: plan.Description.ValueString(),
+		Output:      transcdr.RawOutputSpec([]byte(plan.Output.ValueString())),
 	}
-	if !jsonEqual(plan.Output.ValueString(), state.Output.ValueString()) {
-		params.Output = transcdr.RawOutputSpec([]byte(plan.Output.ValueString()))
+	if known(plan.Metadata) {
+		params.Metadata = mapStrings(ctx, plan.Metadata, &resp.Diagnostics)
 	}
-	p, err := r.client.Presets.Update(ctx, state.ID.ValueString(), &params)
+	p, err := r.client.Presets.Replace(ctx, state.ID.ValueString(), &params)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the preset", err, presetParams)
 		return

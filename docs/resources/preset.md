@@ -35,8 +35,8 @@ resource "transcdr_preset" "cbr_broadcast" {
 }
 
 # An automatic ABR ladder up to 1080p, coded to a quality level rather than a
-# rate. Changing a value updates the preset in place; removing a field you had
-# set replaces it (a new id; the slug carries over).
+# rate. Every change updates the preset in place; a field you remove goes back
+# to its default.
 resource "transcdr_preset" "av1_ladder" {
   name = "AV1 ladder"
   output = jsonencode({
@@ -55,7 +55,7 @@ resource "transcdr_preset" "av1_ladder" {
 ### Required
 
 - `name` (String) A name, up to 120 characters.
-- `output` (String) The output specification as JSON (`jsonencode({...})`), merged over the defaults and validated against the plan's limits. Changing a value updates the preset in place. Removing a field you had set replaces the preset (new id; references by slug keep working), because the API merges updates into the stored specification and would keep the old value.
+- `output` (String) The output specification as JSON (`jsonencode({...})`), merged over the defaults and validated against the plan's limits. Every change updates the preset in place: the whole specification is sent again, so a field removed here goes back to its default.
 
 ### Optional
 

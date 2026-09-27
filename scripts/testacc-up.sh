@@ -45,6 +45,9 @@ export DATABASE_URL="sqlite://$(native "$state")/transcdr.sqlite?mode=rwc"
 export STORAGE_ROOT="$(native "$state")/storage" SERVER_PORT="$port" SERVER_HOST=0.0.0.0
 export APP_URL="http://localhost:$port" WORKER_API_URL="http://localhost:$port"
 export DISPATCH_DRIVER=none LOG_FORMAT=json RUST_LOG=warn
+# Not production: LocalStack is on localhost over http, which production refuses. Set here so a
+# checkout without a .env (a fresh clone, a worktree) behaves the same.
+export APP_ENV=local
 cd "$repo"
 "$bin" migrate >/dev/null 2>&1
 key="$("$bin" demo:seed 2>/dev/null | sed -n 's/^Live key: *//p')"

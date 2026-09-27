@@ -1,12 +1,15 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	transcdr "github.com/transcdr/transcdr-sdk-go"
 )
 
 func testAccHTTPSDestination(url, events, description string, enabled bool, extra string) string {
@@ -23,7 +26,7 @@ resource "transcdr_event_destination" "test" {
 
 func TestAccEventDestination_https(t *testing.T) {
 	r := "transcdr_event_destination.test"
-	var secret string
+	var secret, id string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
@@ -39,6 +42,7 @@ func TestAccEventDestination_https(t *testing.T) {
 					resource.TestCheckTypeSetElemAttr(r, "events.*", "job.completed"),
 					resource.TestMatchResourceAttr(r, "signing_secret", regexp.MustCompile(`^whsec_`)),
 					resource.TestCheckResourceAttrWith(r, "signing_secret", capture(&secret)),
+					resource.TestCheckResourceAttrWith(r, "id", capture(&id)),
 				),
 			},
 			{
@@ -64,13 +68,33 @@ func TestAccEventDestination_https(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr(r, "signing_secret", regexp.MustCompile(`^whsec_`)),
 					resource.TestCheckResourceAttrWith(r, "signing_secret", differs(&secret)),
+					resource.TestCheckResourceAttrWith(r, "signing_secret", capture(&secret)),
+				),
+			},
+			// Rotated outside Terraform: the fingerprint changes, and the stale signing_secret is
+			// cleared rather than kept.
+			{
+				PreConfig: func() {
+					if _, err := testClient().Webhooks.RotateSecret(context.Background(), id); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config: testAccHTTPSDestination("https://example.com/hooks/transcdr-v2", `["*"]`, "tfacc updated", true, "secret_version = 2"),
+				Check:  resource.TestCheckNoResourceAttr(r, "signing_secret"),
+			},
+			// Rotating again records the new secret.
+			{
+				Config: testAccHTTPSDestination("https://example.com/hooks/transcdr-v2", `["*"]`, "tfacc updated", true, "secret_version = 3"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr(r, "signing_secret", regexp.MustCompile(`^whsec_`)),
+					resource.TestCheckResourceAttrWith(r, "signing_secret", differs(&secret)),
 				),
 			},
 		},
 	})
 }
 
-func testAccAWSDestinations(suffix, secret string) string {
+func testAccAWSDestinations(suffix, secret, sqsExtra string) string {
 	return configHeader(true) + fmt.Sprintf(`
 resource "aws_sns_topic" "t" {
   name = %[1]q
@@ -96,6 +120,7 @@ resource "transcdr_event_destination" "sqs" {
     access_key_id     = %[4]q
     secret_access_key = %[5]q
     region            = "us-east-1"
+    %[6]s
   }
   depends_on = [aws_sqs_queue.q]
 }
@@ -110,11 +135,13 @@ resource "transcdr_event_destination" "via_connection" {
   connection_id = transcdr_connection.hook.id
   events        = ["job.failed", "connection.disabled"]
 }
-`, suffix, localstackURL(), queueURL(suffix), testAccessKeyID, secret)
+`, suffix, localstackURL(), queueURL(suffix), testAccessKeyID, secret, sqsExtra)
 }
 
 func TestAccEventDestination_awsAndConnection(t *testing.T) {
 	suffix := acctest.RandomWithPrefix("tfacc")
+	sns, sqs := "transcdr_event_destination.sns", "transcdr_event_destination.sqs"
+	var snsID, sqsID, fp string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
@@ -122,7 +149,7 @@ func TestAccEventDestination_awsAndConnection(t *testing.T) {
 		CheckDestroy:             checkGone("transcdr_event_destination", "/v1/webhooks/"),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSDestinations(suffix, testSecretAccessKey),
+				Config: testAccAWSDestinations(suffix, testSecretAccessKey, `message_group_id = "tfacc"`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("transcdr_event_destination.sns", "type", "sns"),
 					resource.TestCheckResourceAttrPair("transcdr_event_destination.sns", "target", "aws_sns_topic.t", "arn"),
@@ -134,6 +161,9 @@ func TestAccEventDestination_awsAndConnection(t *testing.T) {
 					resource.TestCheckResourceAttr("transcdr_event_destination.via_connection", "target", "https://example.com/hooks/"+suffix),
 					resource.TestCheckNoResourceAttr("transcdr_event_destination.via_connection", "url"),
 					resource.TestMatchResourceAttr("transcdr_event_destination.via_connection", "signing_secret", regexp.MustCompile(`^whsec_`)),
+					resource.TestCheckResourceAttr(sqs, "aws.message_group_id", "tfacc"),
+					resource.TestCheckResourceAttrWith(sns, "id", capture(&snsID)),
+					resource.TestCheckResourceAttrWith(sqs, "id", capture(&sqsID)),
 				),
 			},
 			{
@@ -155,10 +185,44 @@ func TestAccEventDestination_awsAndConnection(t *testing.T) {
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"signing_secret"},
 			},
-			// Rotating the AWS secret updates in place.
+			// Rotating the AWS secret and removing the message group update in place: the group is
+			// cleared with null, not by replacing the destination.
 			{
-				Config: testAccAWSDestinations(suffix, testSecretAccessKey+"2"),
-				Check:  resource.TestCheckResourceAttr("transcdr_event_destination.sns", "aws.secret_access_key", testSecretAccessKey+"2"),
+				Config: testAccAWSDestinations(suffix, testSecretAccessKey+"2", ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(sns, "aws.secret_access_key", testSecretAccessKey+"2"),
+					resource.TestCheckNoResourceAttr(sqs, "aws.message_group_id"),
+					resource.TestCheckResourceAttrWith(sns, "id", same(&snsID)),
+					resource.TestCheckResourceAttrWith(sqs, "id", same(&sqsID)),
+					checkAPI("/v1/webhooks/", sqs, func(obj map[string]any) error {
+						if g := obj["aws"].(map[string]any)["message_group_id"]; g != nil {
+							return fmt.Errorf("message_group_id is still %v", g)
+						}
+						return nil
+					}),
+					captureFingerprint("/v1/webhooks/", sns, "secret_access_key", &fp),
+				),
+			},
+			// Drift: the AWS secret replaced outside Terraform is set back on the next apply.
+			{
+				PreConfig: func() {
+					_, err := testClient().Webhooks.Update(context.Background(), snsID, &transcdr.WebhookUpdateParams{
+						AWS: &transcdr.WebhookAWSParams{AccessKeyID: transcdr.String(testAccessKeyID), SecretAccessKey: transcdr.String(testSecretAccessKey + "-elsewhere")},
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:             testAccAWSDestinations(suffix, testSecretAccessKey+"2", ""),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: testAccAWSDestinations(suffix, testSecretAccessKey+"2", ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(sns, "aws.secret_access_key", testSecretAccessKey+"2"),
+					sameFingerprint("/v1/webhooks/", sns, "secret_access_key", &fp),
+				),
 			},
 		},
 	})

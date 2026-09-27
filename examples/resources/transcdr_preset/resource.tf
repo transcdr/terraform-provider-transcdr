@@ -17,8 +17,8 @@ resource "transcdr_preset" "cbr_broadcast" {
 }
 
 # An automatic ABR ladder up to 1080p, coded to a quality level rather than a
-# rate. Changing a value updates the preset in place; removing a field you had
-# set replaces it (a new id; the slug carries over).
+# rate. Every change updates the preset in place; a field you remove goes back
+# to its default.
 resource "transcdr_preset" "av1_ladder" {
   name = "AV1 ladder"
   output = jsonencode({

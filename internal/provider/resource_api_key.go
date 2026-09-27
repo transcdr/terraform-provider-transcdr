@@ -152,10 +152,9 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// findAPIKey looks a key up in the list: the API has no endpoint for one key. Revoked keys are
-// not listed, so a revoked key is not found.
-func findAPIKey(ctx context.Context, c *transcdr.Client, id string) (*transcdr.APIKey, error) {
-	k, err := c.APIKeys.Find(ctx, id)
+// getAPIKey reads a key, or nil once it is revoked (the API answers 404).
+func getAPIKey(ctx context.Context, c *transcdr.Client, id string) (*transcdr.APIKey, error) {
+	k, err := c.APIKeys.Get(ctx, id)
 	if transcdr.IsNotFound(err) {
 		return nil, nil
 	}
@@ -168,9 +167,9 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	k, err := findAPIKey(ctx, r.client, state.ID.ValueString())
+	k, err := getAPIKey(ctx, r.client, state.ID.ValueString())
 	if err != nil {
-		addAPIError(&resp.Diagnostics, "Could not read the API keys", err, nil)
+		addAPIError(&resp.Diagnostics, "Could not read the API key", err, nil)
 		return
 	}
 	if k == nil {

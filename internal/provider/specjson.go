@@ -3,8 +3,6 @@ package provider
 import (
 	"encoding/json"
 	"reflect"
-	"sort"
-	"strings"
 )
 
 // A preset's output is written as a partial output specification (what differs from the defaults)
@@ -62,39 +60,6 @@ func projectedOutput(configured string, api json.RawMessage) (string, bool) {
 		return string(api), false
 	}
 	return string(b), false
-}
-
-// removedJSONPaths lists the object keys, recursively, that before sets and after does not: values
-// an update would leave in place, since the API merges output updates into the stored spec.
-func removedJSONPaths(before, after string) []string {
-	var b, a any
-	if json.Unmarshal([]byte(before), &b) != nil || json.Unmarshal([]byte(after), &a) != nil {
-		return nil
-	}
-	var out []string
-	var walk func(b, a any, prefix []string)
-	walk = func(b, a any, prefix []string) {
-		bm, ok := b.(map[string]any)
-		if !ok {
-			return
-		}
-		am, ok := a.(map[string]any)
-		if !ok {
-			return
-		}
-		for k, bv := range bm {
-			p := append(append([]string{}, prefix...), k)
-			av, ok := am[k]
-			if !ok {
-				out = append(out, strings.Join(p, "."))
-				continue
-			}
-			walk(bv, av, p)
-		}
-	}
-	walk(b, a, nil)
-	sort.Strings(out)
-	return out
 }
 
 // compactJSON re-encodes raw compactly, or returns it as it is.
