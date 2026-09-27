@@ -1,0 +1,11 @@
+/dist/
+/terraform-provider-transcdr
+*.exe
+*.test
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+*.tfvars
+!*.tfvars.example
+crash.log
+.claude/
