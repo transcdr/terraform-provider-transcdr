@@ -13,7 +13,7 @@ concurrency:
 permissions:
   contents: read
 
-# Our own runners (transcdr-infra/runners). Acceptance tests need a Transcdr API
+# GitHub-hosted runners: this repository is public. Acceptance tests need a Transcdr API
 # and LocalStack, so they run locally: scripts/testacc-up.sh, scripts/testacc.sh.
 
 jobs:

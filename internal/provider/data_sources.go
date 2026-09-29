@@ -110,6 +110,7 @@ type presetDataModel struct {
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
 	System      types.Bool   `tfsdk:"system"`
+	Version     types.Int64  `tfsdk:"version"`
 	Output      types.String `tfsdk:"output"`
 	Metadata    types.Map    `tfsdk:"metadata"`
 }
@@ -121,14 +122,16 @@ func (d *presetDataSource) Metadata(_ context.Context, req datasource.MetadataRe
 func (d *presetDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A preset by slug or id: a system preset (`web-av1-1080p`, `web-av1-720p`, `hls-av1-abr`, `hls-h264-abr`, `mp4-h264-compat-1080p`, " +
-			"`mp4-h265-1080p`, `hdr10-av1-2160p`, `social-vertical-1080x1920`, `audio-strip-av1-720p`, `archive-av1-high`) or one of the organization's. Needs `presets:read`.",
+			"`mp4-h265-1080p`, `hdr10-av1-2160p`, `social-vertical-1080x1920`, `audio-strip-av1-720p`, `archive-av1-high`, and the image presets) or one of the organization's: " +
+			"its latest version, or the one `version` names. Needs `presets:read`.",
 		Attributes: map[string]schema.Attribute{
 			"id":          schema.StringAttribute{Optional: true, Computed: true, MarkdownDescription: "`pre_…`, or the slug for a system preset. Give this or `slug`."},
 			"slug":        schema.StringAttribute{Optional: true, Computed: true, MarkdownDescription: "The preset's slug. Give this or `id`."},
 			"name":        schema.StringAttribute{Computed: true, MarkdownDescription: "The preset's name."},
 			"description": schema.StringAttribute{Computed: true, MarkdownDescription: "The preset's description."},
 			"system":      schema.BoolAttribute{Computed: true, MarkdownDescription: "Whether it is a built-in system preset."},
-			"output":      schema.StringAttribute{Computed: true, MarkdownDescription: "The full output specification, as JSON."},
+			"version":     schema.Int64Attribute{Optional: true, Computed: true, MarkdownDescription: "A version to read; left out, the latest, whose number this is then."},
+			"output":      schema.StringAttribute{Computed: true, MarkdownDescription: "The version's whole output specification (output spec v2), as JSON."},
 			"metadata":    schema.MapAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: "The preset's metadata."},
 		},
 	}
@@ -152,7 +155,13 @@ func (d *presetDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if ref == "" {
 		ref = m.Slug.ValueString()
 	}
-	p, err := d.client.Presets.Get(ctx, ref)
+	var p *transcdr.Preset
+	var err error
+	if known(m.Version) {
+		p, err = d.client.Presets.GetVersion(ctx, ref, int(m.Version.ValueInt64()))
+	} else {
+		p, err = d.client.Presets.Get(ctx, ref)
+	}
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not read the preset "+ref, err, nil)
 		return
@@ -162,6 +171,7 @@ func (d *presetDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	m.Name = types.StringValue(p.Name)
 	m.Description = types.StringValue(p.Description)
 	m.System = types.BoolValue(p.System)
+	m.Version = types.Int64Value(int64(p.Version))
 	m.Output = types.StringValue(compactJSON(p.Output.Raw()))
 	m.Metadata = metadataValue(types.MapValueMust(types.StringType, map[string]attr.Value{}), p.Metadata)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)

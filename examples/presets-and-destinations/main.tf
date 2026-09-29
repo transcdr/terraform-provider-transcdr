@@ -57,25 +57,49 @@ resource "transcdr_preset" "cbr_broadcast" {
 
   description = "H.264 HLS at constant bit rates, for players and networks that need predictable bandwidth."
 
+  # The whole output specification (output spec v2): every field its kind
+  # needs, nothing left to a default. A missing field is reported at plan
+  # time, every one at once.
   output = jsonencode({
-    mode            = "hls" # a CMAF/HLS package with a master playlist
-    codec           = "h264"
-    segment_seconds = 4 # HLS segment length, 1 to 20
+    kind = "video"
 
-    quality = {
-      target    = "cbr"
-      bitrate   = "3M" # for renditions without their own bitrate
-      buffer_ms = 1500 # the rate buffer, 100 to 10000 ms (default 1000)
+    # A CMAF/HLS package with a master playlist; segments 1 to 20 seconds.
+    container = { format = "hls", segment_seconds = 4 }
+
+    video = {
+      codec = "h264"
+      cbr = {
+        bitrate   = "3M" # for sizes without their own rate; or "standard"
+        buffer_ms = 1500 # the rate buffer, 100 to 10000 ms
+      }
+      bit_depth  = "8bit"
+      color      = "sdr"
+      frame_rate = { max = "source" } # or a cap such as 30
+      gop        = "segment"          # one keyframe per segment
+      filters    = []
     }
 
-    # Rates are 100k to 200M. Width and height must be even.
-    renditions = [
-      { width = 1920, height = 1080, bitrate = "6M" },
-      { width = 1280, height = 720 }, # takes quality.bitrate: 3M
-      { width = 854, height = 480, bitrate = "1200k" },
-    ]
+    audio = {
+      handling        = "encode"
+      codec           = "aac" # AAC-LC plays everywhere
+      bitrate         = "128k"
+      channels        = "source"
+      he_aac          = "auto"
+      stereo_fallback = false
+    }
 
-    audio = { mode = "auto", bitrate = "128k" }
+    # Rates are 100k to 200M. Width and height are a maximum box, even.
+    renditions = {
+      sizes = [
+        { label = "by_size", width = 1920, height = 1080, fit = "contain", orientation = "auto", upscale = false, video = { cbr = { bitrate = "6M" } } },
+        { label = "by_size", width = 1280, height = 720, fit = "contain", orientation = "auto", upscale = false }, # takes video.cbr.bitrate: 3M
+        { label = "by_size", width = 854, height = 480, fit = "contain", orientation = "auto", upscale = false, video = { cbr = { bitrate = "1200k" } } },
+      ]
+    }
+
+    subtitles = { tracks = "all" }
+    trim      = { start = 0, end = "source" }
+    privacy   = { preset = "strip_all" } # no location, device, capture time or tags
   })
 
   # Up to 20 string keys; not used by Transcdr, only stored and returned.
@@ -88,30 +112,45 @@ resource "transcdr_preset" "cbr_broadcast" {
 # A preset built on a system preset
 # -----------------------------------------------------------------------------
 
-# Take the system preset's full specification and change one field. merge()
-# overwrites `codec`; everything else (its ladder, segment length, audio) is
-# the system preset's. If Transcdr ever changes that system preset, the next
-# plan shows the difference here.
+# Take the system preset's whole specification and change one field. The spec
+# is in sections, so the codec is replaced inside `video`; everything else
+# (its ladder, segment length, audio) is the system preset's. A new version of
+# that system preset shows up as a difference in the next plan.
+locals {
+  hls_h264 = jsondecode(data.transcdr_preset.hls_h264.output)
+}
+
 resource "transcdr_preset" "web_h265_abr" {
   name   = "Web H.265 ABR"
-  output = jsonencode(merge(jsondecode(data.transcdr_preset.hls_h264.output), { codec = "h265" }))
+  output = jsonencode(merge(local.hls_h264, { video = merge(local.hls_h264.video, { codec = "h265" }) }))
 }
 
 # -----------------------------------------------------------------------------
 # A quality-targeted preset
 # -----------------------------------------------------------------------------
 
-# For archives: one MP4 at the source's resolution (no renditions given),
-# coded to a perceptual quality score instead of a rate. vmaf=95 is close to
-# visually lossless; lower numbers make smaller files.
+# For archives: one MP4 at the source's size, coded to a perceptual quality
+# score instead of a rate. vmaf=95 is close to visually lossless; lower
+# numbers make smaller files.
 resource "transcdr_preset" "archive" {
   name = "Archive AV1"
   output = jsonencode({
-    mode      = "single" # one MP4 per rendition
-    codec     = "av1"
-    quality   = { target = "vmaf=95" }
-    bit_depth = "10bit"
-    color     = "passthrough" # keep the source's colour (SDR or HDR) as it is
+    kind      = "video"
+    container = { format = "mp4" } # one faststart MP4 per size
+    video = {
+      codec      = "av1"
+      quality    = "vmaf=95"
+      bit_depth  = "10bit"
+      color      = "passthrough" # keep the source's colour (SDR or HDR) as it is
+      frame_rate = { max = "source" }
+      gop        = { seconds = 2 }
+      filters    = []
+    }
+    audio      = { handling = "encode", codec = "flac", channels = "source", he_aac = "auto", bit_depth = "source", flac_compression = "best" }
+    renditions = { source_size = { label = "by_size", fit = "contain", upscale = false } }
+    subtitles  = { tracks = "all" }
+    trim       = { start = 0, end = "source" }
+    privacy    = { preset = "keep_all" } # an archive keeps where, when and on what it was made
   })
 }
 

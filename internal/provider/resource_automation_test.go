@@ -87,10 +87,10 @@ resource "transcdr_automation" "test" {
   poll_interval_seconds = 120
   settle_seconds        = 10
 
-  preset = "hls-h264-abr"
+  preset = "hls-h264-abr@1"
   output = jsonencode({
-    codec = "h264"
-    renditions = [{ width = 1280, height = 720 }]
+    video      = { frame_rate = { max = 30 } }
+    renditions = { sizes = [{ label = "by_size", width = 1280, height = 720, fit = "contain", orientation = "auto", upscale = false }] }
   })
 
   destination = {
@@ -142,8 +142,11 @@ resource "transcdr_automation" "test" {
 					resource.TestCheckResourceAttr(r, "source.pattern", "**/*.{mp4,mov}"),
 					resource.TestCheckResourceAttr(r, "poll_interval_seconds", "120"),
 					resource.TestCheckResourceAttr(r, "settle_seconds", "10"),
-					resource.TestCheckResourceAttr(r, "preset", "hls-h264-abr"),
-					resource.TestCheckResourceAttr(r, "output", `{"codec":"h264","renditions":[{"height":720,"width":1280}]}`),
+					resource.TestCheckResourceAttr(r, "preset", "hls-h264-abr@1"),
+					resource.TestCheckResourceAttr(r, "output", `{"renditions":{"sizes":[{"fit":"contain","height":720,"label":"by_size","orientation":"auto","upscale":false,"width":1280}]},"video":{"frame_rate":{"max":30}}}`),
+					// The overrides over version 1 of the preset, resolved: the ladder became one size.
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"frame_rate":\{"max":30`)),
+					resource.TestMatchResourceAttr(r, "resolved_output", regexp.MustCompile(`"sizes":\[\{`)),
 					resource.TestCheckResourceAttrPair(r, "destination.connection_id", "transcdr_connection.bucket", "id"),
 					resource.TestCheckResourceAttr(r, "destination.prefix", "transcoded/{stem}/"),
 					resource.TestCheckResourceAttr(r, "after_success", "delete"),

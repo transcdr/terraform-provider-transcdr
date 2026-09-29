@@ -21,7 +21,7 @@ Use the preset ids from `terraform output presets` as a job's or automation's `p
 
 ## How preset outputs are compared
 
-You write only the fields you want. The API fills in the rest, and `resolved_output` shows the full specification. Terraform compares only the fields you set, so API defaults never show up as drift, but a field changed outside Terraform does. Every change updates the preset in place, keeping its id: Terraform sends the whole preset (`PUT`), so a field you remove goes back to its default.
+A preset's `output` is the whole specification in the output spec v2 shape: `kind` and every field that kind needs, with nothing left to a default (values that follow the source are written out, such as `"source"` or `"standard"`). A missing field is reported at plan time, every one at once, with the API's own messages. `resolved_output` shows what the API stored. Terraform compares the fields you set with it, so a privacy preset (`{ preset = "strip_all" }`) matches the four categories it stands for, and values the API writes beside yours (each size's effective rate) are not drift; a field changed outside Terraform is. Every change updates the preset in place, keeping its id, as a new `version`; pin a version with `"<slug>@<version>"`.
 
 ## Verifying deliveries
 

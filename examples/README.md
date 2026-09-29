@@ -95,7 +95,7 @@ The `transcdr_bucket_automation_setup` data source generates the AWS side: the I
   - An event destination's signing secret rotates when you change `secret_version`.
   - An API key cannot be changed: any change creates a new key.
 - **Drift:** when Transcdr turns a failing connection off, the next plan shows `enabled` going back to `true`, and applying tests it and turns it back on.
-- **Preset outputs are compared field by field.** Only the fields you write are compared, so API defaults are not drift. Every change updates the preset in place, and a field you remove goes back to its default. See `presets-and-destinations`.
+- **Preset outputs are whole specifications (output spec v2), compared field by field.** Every field the kind needs is written; a missing one is reported at plan time. Every change updates the preset in place as a new version. See `presets-and-destinations`.
 - **Removing an optional argument clears it in place**: an automation's `destination`, `preset`, `output`, `metadata` or `webhook_url`, or an event destination's `aws.endpoint` or `aws.message_group_id`. Nothing is replaced, so an automation keeps its id, its hook URL and its record of processed files.
 - **Outputs must not land in the watched prefix**, or they are picked up and transcoded again.
 - **S3 suffix filters are case-sensitive.** `*.mp4` does not send `CLIP.MP4`. Transcdr's own pattern matching is case-insensitive.

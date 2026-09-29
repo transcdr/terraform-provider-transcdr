@@ -263,9 +263,9 @@ resource "transcdr_connection" "queue" {
 # -----------------------------------------------------------------------------
 
 # How every file is transcoded: an HLS ladder in var.codec. `output` is the
-# part of the output specification you care about; everything else takes the
-# API's defaults, which `resolved_output` shows. Changing it later updates the
-# preset in place, and a field you remove goes back to its default.
+# whole output specification (output spec v2): every field is stated, and a
+# missing one is reported at plan time. Changing it later updates the preset
+# in place, as a new version.
 #
 # To use a system preset instead, drop this resource and set the automation's
 # `preset` to a slug such as "hls-av1-abr".
@@ -274,13 +274,28 @@ resource "transcdr_preset" "delivery" {
   description = "HLS ladder for ${var.name}, managed by Terraform"
 
   output = jsonencode({
-    mode  = "hls"
-    codec = var.codec
-    renditions = [
-      { width = 1920, height = 1080 },
-      { width = 1280, height = 720 },
-      { width = 854, height = 480 },
-    ]
+    kind      = "video"
+    container = { format = "hls", segment_seconds = 4 }
+    video = {
+      codec      = var.codec
+      quality    = "standard"
+      bit_depth  = "from_color"
+      color      = "sdr"
+      frame_rate = { max = "source" }
+      gop        = "segment"
+      filters    = []
+    }
+    audio = { handling = "encode", codec = "aac", bitrate = "standard", channels = "source", he_aac = "auto", stereo_fallback = false }
+    renditions = {
+      sizes = [
+        { label = "by_size", width = 1920, height = 1080, fit = "contain", orientation = "auto", upscale = false },
+        { label = "by_size", width = 1280, height = 720, fit = "contain", orientation = "auto", upscale = false },
+        { label = "by_size", width = 854, height = 480, fit = "contain", orientation = "auto", upscale = false },
+      ]
+    }
+    subtitles = { tracks = "all" }
+    trim      = { start = 0, end = "source" }
+    privacy   = { preset = "strip_all" }
   })
 
   metadata = {
@@ -314,8 +329,8 @@ resource "transcdr_automation" "ingest" {
 
   # How: the preset above, by id (a system preset slug also works). To change
   # a few settings for this automation only, add
-  # `output = jsonencode({ segment_seconds = 4 })`: those fields are merged
-  # over the preset's.
+  # `output = jsonencode({ container = { segment_seconds = 6 } })`: those
+  # fields are merged over the preset's.
   preset = transcdr_preset.delivery.id
 
   # Where: back into the bucket, under the output template. Leave the whole

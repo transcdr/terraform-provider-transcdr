@@ -47,6 +47,7 @@ type automationModel struct {
 	SettleSeconds       types.Int64             `tfsdk:"settle_seconds"`
 	Preset              types.String            `tfsdk:"preset"`
 	Output              jsontypes.Normalized    `tfsdk:"output"`
+	ResolvedOutput      types.String            `tfsdk:"resolved_output"`
 	Destination         *automationDestinations `tfsdk:"destination"`
 	AfterSuccess        types.String            `tfsdk:"after_success"`
 	Priority            types.String            `tfsdk:"priority"`
@@ -140,14 +141,21 @@ func (r *automationResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators:          []validator.Int64{int64validator.Between(0, 86400)},
 			},
 			"preset": schema.StringAttribute{
-				Optional:            true,
-				MarkdownDescription: "A system preset slug (e.g. `hls-av1-abr`) or a preset id (`pre_…`, e.g. `transcdr_preset.x.id`).",
+				Optional: true,
+				MarkdownDescription: "A system preset slug (e.g. `hls-av1-abr`), a preset id (`pre_…`, e.g. `transcdr_preset.x.id`), or `<slug>@<version>` to pin a version " +
+					"(e.g. `\"${transcdr_preset.x.slug}@${transcdr_preset.x.version}\"`). Without a version, each job uses the preset's latest version.",
 			},
 			"output": schema.StringAttribute{
 				CustomType: jsontypes.NormalizedType{},
 				Optional:   true,
-				MarkdownDescription: "Output specification overrides, as JSON, merged over the preset (`jsonencode({ codec = \"h264\" })`). " +
-					"Objects merge; arrays and scalars replace. Compared semantically: formatting and key order do not matter.",
+				MarkdownDescription: "With `preset`: the fields to change, as JSON in the output spec v2 shape, merged over the preset " +
+					"(`jsonencode({ video = { frame_rate = { max = 24 } } })`). Objects merge key by key; arrays and scalars replace; one choice of an exclusive group " +
+					"(`quality`/`crf`/`cbr`, `sizes`/`ladder`/`source_size`, `tracks`/`languages`) replaces the others; `null` removes a field; `kind` cannot change. " +
+					"Without `preset`: the whole specification, checked at plan time like a preset's. Compared semantically: formatting and key order do not matter.",
+			},
+			"resolved_output": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "The whole output specification `preset` and `output` resolve to now, as JSON; null when they do not resolve (for example, a preset that was deleted).",
 			},
 			"destination": schema.SingleNestedAttribute{
 				Optional: true,
@@ -253,6 +261,11 @@ func (r *automationResource) ValidateConfig(ctx context.Context, req resource.Va
 		if json.Unmarshal([]byte(cfg.Output.ValueString()), &v) == nil {
 			if _, ok := v.(map[string]any); !ok {
 				resp.Diagnostics.AddAttributeError(path.Root("output"), "Invalid output", "output must be a JSON object.")
+				return
+			}
+			// Without a preset, the output is the whole specification.
+			if cfg.Preset.IsNull() {
+				checkOutput(&resp.Diagnostics, path.Root("output"), cfg.Output.ValueString())
 			}
 		}
 	}
@@ -271,6 +284,11 @@ func (r *automationResource) ModifyPlan(ctx context.Context, req resource.Modify
 	// The hook URL changes only when the token is rotated.
 	if known(state.HookURL) && plan.HookTokenVersion.Equal(state.HookTokenVersion) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("hook_url"), state.HookURL)...)
+	}
+	// The resolved specification changes with the preset and the output (and with a new version of
+	// an unpinned preset, which a refresh shows).
+	if plan.Preset.Equal(state.Preset) && sameOutput(plan.Output, state.Output) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("resolved_output"), state.ResolvedOutput)...)
 	}
 }
 
@@ -300,9 +318,13 @@ func (m *automationModel) params(ctx context.Context, prior *automationModel, di
 	p.WebhookURL = orClear(m.WebhookURL, prior != nil)
 	switch {
 	case known(m.Output):
-		p.Output = transcdr.Value(transcdr.RawOutputSpec([]byte(m.Output.ValueString())))
+		var overrides transcdr.OutputOverrides
+		if err := json.Unmarshal([]byte(m.Output.ValueString()), &overrides); err != nil {
+			diags.AddAttributeError(path.Root("output"), "Invalid output", "output must be a JSON object: "+err.Error())
+		}
+		p.Output = transcdr.Value(overrides)
 	case prior != nil:
-		p.Output = transcdr.Null[*transcdr.OutputSpecInput]()
+		p.Output = transcdr.Null[transcdr.OutputOverrides]()
 	}
 	switch {
 	case m.Destination != nil:
@@ -443,13 +465,19 @@ func (m *automationModel) fromAPI(a *transcdr.Automation, prior *automationModel
 	m.SettleSeconds = types.Int64Value(int64(a.SettleSeconds))
 	m.Preset = strOrNull(a.Preset)
 
+	output, _ := json.Marshal(a.Output)
 	switch {
-	case isEmptyJSONObject(a.Output.Raw()) && prior.Output.IsNull():
+	case isEmptyJSONObject(output) && prior.Output.IsNull():
 		m.Output = jsontypes.NewNormalizedNull()
-	case known(prior.Output) && jsonEqual(prior.Output.ValueString(), string(a.Output.Raw())):
+	case known(prior.Output) && jsonEqual(prior.Output.ValueString(), string(output)):
 		m.Output = prior.Output
 	default:
-		m.Output = jsontypes.NewNormalizedValue(compactJSON(a.Output.Raw()))
+		m.Output = jsontypes.NewNormalizedValue(compactJSON(output))
+	}
+	if a.ResolvedOutput != nil && len(a.ResolvedOutput.Raw()) > 0 {
+		m.ResolvedOutput = types.StringValue(compactJSON(a.ResolvedOutput.Raw()))
+	} else {
+		m.ResolvedOutput = types.StringNull()
 	}
 
 	if a.Destination != nil {
@@ -482,4 +510,12 @@ func (m *automationModel) fromAPI(a *transcdr.Automation, prior *automationModel
 	m.LastPolledAt = timeOrNull(a.LastPolledAt)
 	m.LastTriggeredAt = timeOrNull(a.LastTriggeredAt)
 	m.LastError = strOrNull(a.LastError)
+}
+
+// sameOutput is whether two output overrides mean the same: both null, or equal JSON.
+func sameOutput(a, b jsontypes.Normalized) bool {
+	if a.IsNull() || b.IsNull() {
+		return a.IsNull() && b.IsNull()
+	}
+	return known(a) && known(b) && jsonEqual(a.ValueString(), b.ValueString())
 }

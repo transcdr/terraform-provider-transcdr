@@ -13,11 +13,13 @@ resource "transcdr_automation" "watch" {
   poll_interval_seconds = 300 # 60 to 86400
   settle_seconds        = 60  # how long a file must stay unchanged
 
-  # A system preset slug or a transcdr_preset id, plus optional overrides
-  # merged over it (objects merge, arrays and values replace).
+  # A system preset slug or a transcdr_preset id ("<slug>@<version>" pins a
+  # version), plus optional overrides in the output spec v2 shape, merged over
+  # it: objects merge, arrays and values replace, null removes a field.
+  # resolved_output shows the whole specification they come to.
   preset = "hls-av1-abr"
   output = jsonencode({
-    segment_seconds = 6
+    container = { segment_seconds = 6 }
   })
 
   # Deliver outputs to a writable connection. Keep the prefix outside the

@@ -41,11 +41,13 @@ resource "transcdr_automation" "watch" {
   poll_interval_seconds = 300 # 60 to 86400
   settle_seconds        = 60  # how long a file must stay unchanged
 
-  # A system preset slug or a transcdr_preset id, plus optional overrides
-  # merged over it (objects merge, arrays and values replace).
+  # A system preset slug or a transcdr_preset id ("<slug>@<version>" pins a
+  # version), plus optional overrides in the output spec v2 shape, merged over
+  # it: objects merge, arrays and values replace, null removes a field.
+  # resolved_output shows the whole specification they come to.
   preset = "hls-av1-abr"
   output = jsonencode({
-    segment_seconds = 6
+    container = { segment_seconds = 6 }
   })
 
   # Deliver outputs to a writable connection. Keep the prefix outside the
@@ -113,9 +115,9 @@ resource "aws_sns_topic_subscription" "transcdr" {
 - `enabled` (Boolean) Whether the automation runs. Default true.
 - `hook_token_version` (Number) Any number. Changing it rotates the hook token: `hook_url` changes and the old URL stops working. Not sent to the API; setting it on create does not rotate.
 - `metadata` (Map of String) Metadata added to every job (up to 20 keys of ≤ 40 characters, values ≤ 500). Jobs also get `automation_id` and `source_path`.
-- `output` (String) Output specification overrides, as JSON, merged over the preset (`jsonencode({ codec = "h264" })`). Objects merge; arrays and scalars replace. Compared semantically: formatting and key order do not matter.
+- `output` (String) With `preset`: the fields to change, as JSON in the output spec v2 shape, merged over the preset (`jsonencode({ video = { frame_rate = { max = 24 } } })`). Objects merge key by key; arrays and scalars replace; one choice of an exclusive group (`quality`/`crf`/`cbr`, `sizes`/`ladder`/`source_size`, `tracks`/`languages`) replaces the others; `null` removes a field; `kind` cannot change. Without `preset`: the whole specification, checked at plan time like a preset's. Compared semantically: formatting and key order do not matter.
 - `poll_interval_seconds` (Number) `watch`: how often the source is listed, 60 to 86400 seconds. Default 300.
-- `preset` (String) A system preset slug (e.g. `hls-av1-abr`) or a preset id (`pre_…`, e.g. `transcdr_preset.x.id`).
+- `preset` (String) A system preset slug (e.g. `hls-av1-abr`), a preset id (`pre_…`, e.g. `transcdr_preset.x.id`), or `<slug>@<version>` to pin a version (e.g. `"${transcdr_preset.x.slug}@${transcdr_preset.x.version}"`). Without a version, each job uses the preset's latest version.
 - `priority` (String) `normal` or `high` (plans with priority). Default `normal`.
 - `settle_seconds` (Number) `watch`: a file is taken once it has been unchanged this long, 0 to 86400 seconds. Default 60.
 - `trigger` (String) `watch` (poll), `hook` (push to `hook_url`) or `queue` (consume an SQS connection). Default `watch`. A `watch` source must be listable (`capabilities.watch`).
@@ -130,6 +132,7 @@ resource "aws_sns_topic_subscription" "transcdr" {
 - `last_error` (String) The last problem the automation hit, e.g. a record from another bucket.
 - `last_polled_at` (String) When the source (or queue) was last read.
 - `last_triggered_at` (String) When the automation last created a job.
+- `resolved_output` (String) The whole output specification `preset` and `output` resolve to now, as JSON; null when they do not resolve (for example, a preset that was deleted).
 
 <a id="nestedatt--source"></a>
 ### Nested Schema for `source`

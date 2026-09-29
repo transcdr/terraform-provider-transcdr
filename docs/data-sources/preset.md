@@ -3,27 +3,37 @@
 page_title: "transcdr_preset Data Source - transcdr"
 subcategory: ""
 description: |-
-  A preset by slug or id: a system preset (web-av1-1080p, web-av1-720p, hls-av1-abr, hls-h264-abr, mp4-h264-compat-1080p, mp4-h265-1080p, hdr10-av1-2160p, social-vertical-1080x1920, audio-strip-av1-720p, archive-av1-high) or one of the organization's. Needs presets:read.
+  A preset by slug or id: a system preset (web-av1-1080p, web-av1-720p, hls-av1-abr, hls-h264-abr, mp4-h264-compat-1080p, mp4-h265-1080p, hdr10-av1-2160p, social-vertical-1080x1920, audio-strip-av1-720p, archive-av1-high, and the image presets) or one of the organization's: its latest version, or the one version names. Needs presets:read.
 ---
 
 # transcdr_preset (Data Source)
 
-A preset by slug or id: a system preset (`web-av1-1080p`, `web-av1-720p`, `hls-av1-abr`, `hls-h264-abr`, `mp4-h264-compat-1080p`, `mp4-h265-1080p`, `hdr10-av1-2160p`, `social-vertical-1080x1920`, `audio-strip-av1-720p`, `archive-av1-high`) or one of the organization's. Needs `presets:read`.
+A preset by slug or id: a system preset (`web-av1-1080p`, `web-av1-720p`, `hls-av1-abr`, `hls-h264-abr`, `mp4-h264-compat-1080p`, `mp4-h265-1080p`, `hdr10-av1-2160p`, `social-vertical-1080x1920`, `audio-strip-av1-720p`, `archive-av1-high`, and the image presets) or one of the organization's: its latest version, or the one `version` names. Needs `presets:read`.
 
 ## Example Usage
 
 ```terraform
-# A system preset, looked up by slug. (Your own presets can be looked up by
-# slug or by id.)
+# A system preset, looked up by slug: its latest version. (Your own presets
+# can be looked up by slug or by id.)
 data "transcdr_preset" "hls" {
   slug = "hls-av1-abr"
 }
 
-# Start from it and change one field: merge() replaces `codec` and keeps the
-# rest of the system preset's specification.
+# A version of it: versions never change.
+data "transcdr_preset" "hls_v1" {
+  slug    = "hls-av1-abr"
+  version = 1
+}
+
+# Start from its whole specification and change one field. The spec is in
+# sections, so the codec is replaced inside `video`, keeping the rest.
+locals {
+  hls = jsondecode(data.transcdr_preset.hls_v1.output)
+}
+
 resource "transcdr_preset" "hls_h264" {
   name   = "HLS H.264"
-  output = jsonencode(merge(jsondecode(data.transcdr_preset.hls.output), { codec = "h264" }))
+  output = jsonencode(merge(local.hls, { video = merge(local.hls.video, { codec = "h264" }) }))
 }
 ```
 
@@ -34,11 +44,12 @@ resource "transcdr_preset" "hls_h264" {
 
 - `id` (String) `pre_…`, or the slug for a system preset. Give this or `slug`.
 - `slug` (String) The preset's slug. Give this or `id`.
+- `version` (Number) A version to read; left out, the latest, whose number this is then.
 
 ### Read-Only
 
 - `description` (String) The preset's description.
 - `metadata` (Map of String) The preset's metadata.
 - `name` (String) The preset's name.
-- `output` (String) The full output specification, as JSON.
+- `output` (String) The version's whole output specification (output spec v2), as JSON.
 - `system` (Boolean) Whether it is a built-in system preset.
