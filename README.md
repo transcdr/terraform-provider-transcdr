@@ -5,7 +5,7 @@ This provider lets you declare [Transcdr](https://transcdr.com) video pipelines 
 - storage and messaging connections
 - bucket automations (watch, hook and queue triggers)
 - event destinations
-- presets, including constant bit rate
+- presets (output spec v2, versioned), including constant bit rate
 - API keys
 
 It composes with the AWS and Cloudflare providers, so you can wire bucket → queue or topic → Transcdr → destination end to end.
@@ -42,6 +42,32 @@ resource "transcdr_automation" "ingest" {
 | **Data sources** | `transcdr_organization`, `transcdr_preset`, `transcdr_connection`, `transcdr_bucket_automation_setup` (local: IAM, queue and topic policies and S3 notification filters, identical to the dashboard's *Automate a bucket*) |
 | **Docs** | [`docs/`](docs/index.md), in the Terraform Registry layout |
 | **Examples** | [`examples/`](examples/README.md): which one to pick, how to run them, and how the pieces fit together. Complete pipelines: [`examples/s3-sqs-queue-automation`](examples/s3-sqs-queue-automation), [`examples/s3-sns-fanout-hook`](examples/s3-sns-fanout-hook), [`examples/r2-watch-folder`](examples/r2-watch-folder), [`examples/presets-and-destinations`](examples/presets-and-destinations) |
+
+## Output specifications (output spec v2)
+
+A preset's `output`, and an automation's `output` when it has no `preset`, is the whole output specification in the v2 shape: `kind` (`video`, `audio` or `image`) and sections (`container`, `video`, `audio`, `image`, `renditions`, `subtitles`, `trim`, `privacy`) stating every field the kind, container, codec and audio handling need. Nothing has a default; a value that follows the source is written out (`"source"`, `"standard"`, `"from_color"`, `"by_size"`, `"poster"`, `"segment"`). The provider checks a spec at plan time against the API's table of required fields and reports every missing field at once, with the API's messages.
+
+```hcl
+resource "transcdr_preset" "social" {
+  name = "Social vertical"
+  output = jsonencode({
+    kind      = "video"
+    container = { format = "mp4" }
+    video     = { codec = "h264", quality = "high", bit_depth = "from_color", color = "sdr", frame_rate = { max = 30 }, gop = { seconds = 2 }, filters = [] }
+    audio     = { handling = "encode", codec = "aac", bitrate = "standard", channels = "source", he_aac = "auto" }
+    renditions = {
+      sizes = [{ label = "by_size", width = 1080, height = 1920, fit = "cover", orientation = "fixed", upscale = false }]
+    }
+    subtitles = { tracks = "all" }
+    trim      = { start = 0, end = "source" }
+    privacy   = { preset = "strip_all" }
+  })
+}
+```
+
+An automation's `output` with a `preset` holds only the fields to change, merged over the preset (`jsonencode({ video = { frame_rate = { max = 24 } } })`; `null` removes a field). Presets are versioned: a changed `output` adds a `version`, and `"<slug>@<version>"` pins one.
+
+**Upgrading from a configuration written in v1** (`mode`, `codec`, `quality`, `renditions` as a list, `audio.mode`, …): the API still accepts v1 input, but it returns specifications in v2, and this provider checks presets in v2. Move each `output` to v2 (the API's resolved spec, in a preset's `resolved_output`, is the exact v2 form of what a v1 spec meant), or every plan would show a difference. The field mapping is in the SDKs' migration guides, for example [transcdr-sdk-go](https://github.com/transcdr/transcdr-sdk-go/blob/main/CHANGELOG.md).
 
 ## Install
 

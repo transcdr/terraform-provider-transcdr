@@ -3,9 +3,14 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -106,32 +111,152 @@ func TestSamePath(t *testing.T) {
 	}
 }
 
-func TestProjectedOutput(t *testing.T) {
-	api := json.RawMessage(`{"audio":{"mode":"auto"},"bit_depth":"auto","codec":"h264","color":"sdr","filters":null,"gop":null,
-		"ladder":null,"max_fps":null,"mode":"hls","quality":{"bitrate":"3000k","buffer_ms":2000,"target":"cbr"},
-		"renditions":[{"bitrate":"6M","height":1080,"width":1920},{"height":720,"width":1280}],"segment_seconds":4.0,"subtitles":null,"trim":null}`)
+// hlsSpec is a whole v2 output specification: the contract's HLS example.
+const hlsSpec = `{"kind":"video","container":{"format":"hls","segment_seconds":6},
+	"video":{"codec":"h264","cbr":{"bitrate":"standard","buffer_ms":1000},"bit_depth":"8bit","color":"sdr",
+		"frame_rate":{"max":"source"},"gop":"segment","filters":[]},
+	"audio":{"handling":"encode","codec":"aac","bitrate":"standard","channels":"source","he_aac":"auto","stereo_fallback":false},
+	"renditions":{"sizes":[
+		{"label":"by_size","width":1920,"height":1080,"fit":"contain","orientation":"auto","upscale":false,"video":{"cbr":{"bitrate":"5M"}}},
+		{"label":"by_size","width":1280,"height":720,"fit":"contain","orientation":"auto","upscale":false}]},
+	"subtitles":{"tracks":"all"},"trim":{"start":0,"end":"source"},"privacy":{"preset":"strip_all"}}`
 
-	// Everything configured matches: the configuration's own text comes back.
-	configured := `{"mode":"hls","codec":"h264","segment_seconds":4,"quality":{"target":"cbr","bitrate":"3000k","buffer_ms":2000},
-		"renditions":[{"width":1920,"height":1080,"bitrate":"6M"},{"width":1280,"height":720,"label":null}]}`
-	if out, ok := projectedOutput(configured, api); !ok || out != configured {
+// hlsResolved is hlsSpec as the API returns it: privacy written out as its four categories, and
+// each size's effective rate.
+var hlsResolved = json.RawMessage(`{"kind":"video","container":{"format":"hls","segment_seconds":6.0},
+	"video":{"codec":"h264","cbr":{"bitrate":"standard","buffer_ms":1000},"bit_depth":"8bit","color":"sdr",
+		"frame_rate":{"max":"source"},"gop":"segment","filters":[]},
+	"audio":{"handling":"encode","codec":"aac","bitrate":"standard","channels":"source","he_aac":"auto","stereo_fallback":false},
+	"renditions":{"sizes":[
+		{"label":"by_size","width":1920,"height":1080,"fit":"contain","orientation":"auto","upscale":false,"video":{"cbr":{"bitrate":"5M"}}},
+		{"label":"by_size","width":1280,"height":720,"fit":"contain","orientation":"auto","upscale":false,"video":{"cbr":{"bitrate":"standard"}}}]},
+	"subtitles":{"tracks":"all"},"trim":{"start":0,"end":"source"},
+	"privacy":{"location":"strip","capture_time":"strip","device":"strip","descriptive":"strip"}}`)
+
+func TestProjectedOutput(t *testing.T) {
+	// The whole spec as written matches its resolved form: a privacy preset matches the four
+	// categories it stands for, and the rate the API writes on a size is not drift.
+	if out, ok := projectedOutput(hlsSpec, hlsResolved); !ok || out != hlsSpec {
 		t.Fatalf("expected no drift, got %s", out)
 	}
 
+	// A privacy preset refined by a field matches when the resolved categories agree.
+	refined := strings.Replace(hlsSpec, `{"preset":"strip_all"}`, `{"preset":"strip_all","capture_time":"date"}`, 1)
+	api := json.RawMessage(strings.Replace(string(hlsResolved), `"capture_time":"strip"`, `"capture_time":"date"`, 1))
+	if out, ok := projectedOutput(refined, api); !ok || out != refined {
+		t.Fatalf("expected no drift for a refined privacy preset, got %s", out)
+	}
+	// ... and is drift when they do not.
+	if _, ok := projectedOutput(refined, hlsResolved); ok {
+		t.Fatal("expected drift: capture_time is strip in the API")
+	}
+
 	// A changed value shows as drift on that field only.
-	changed := `{"codec":"av1","quality":{"target":"cbr"}}`
-	out, ok := projectedOutput(changed, api)
+	changed := `{"kind":"video","video":{"codec":"av1"}}`
+	out, ok := projectedOutput(changed, hlsResolved)
 	if ok {
 		t.Fatal("expected drift")
 	}
-	if !jsonEqual(out, `{"codec":"h264","quality":{"target":"cbr"}}`) {
+	if !jsonEqual(out, `{"kind":"video","video":{"codec":"h264"}}`) {
 		t.Fatalf("projection = %s", out)
 	}
 
-	// A rendition list of another length is shown whole.
-	out, _ = projectedOutput(`{"renditions":[{"width":1920,"height":1080}]}`, api)
-	if !jsonEqual(out, `{"renditions":[{"bitrate":"6M","height":1080,"width":1920},{"height":720,"width":1280}]}`) {
+	// A size list of another length is shown whole.
+	out, _ = projectedOutput(`{"renditions":{"sizes":[{"width":1920}]}}`, hlsResolved)
+	if !strings.Contains(out, `"height":720`) {
 		t.Fatalf("projection = %s", out)
+	}
+}
+
+func TestResolvedPrivacy(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{"privacy":{"preset":"keep_all"}}`, `{"privacy":{"location":"keep","capture_time":"keep","device":"keep_all","descriptive":"keep"}}`},
+		{`{"privacy":{"preset":"strip_location","device":"strip"}}`, `{"privacy":{"location":"strip","capture_time":"keep","device":"strip","descriptive":"keep"}}`},
+		// Four fields, or a preset this provider does not know, are compared as written.
+		{`{"privacy":{"location":"keep","capture_time":"keep","device":"keep","descriptive":"keep"}}`, `{"privacy":{"location":"keep","capture_time":"keep","device":"keep","descriptive":"keep"}}`},
+		{`{"privacy":{"preset":"newer"}}`, `{"privacy":{"preset":"newer"}}`},
+	} {
+		var in any
+		if err := json.Unmarshal([]byte(c.in), &in); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := json.Marshal(resolvedPrivacy(in))
+		if !jsonEqual(string(got), c.want) {
+			t.Errorf("resolvedPrivacy(%s) = %s, want %s", c.in, got, c.want)
+		}
+	}
+}
+
+func TestCheckOutput(t *testing.T) {
+	var diags diag.Diagnostics
+	checkOutput(&diags, path.Root("output"), hlsSpec)
+	if diags.HasError() {
+		t.Fatalf("a whole spec: %v", diags)
+	}
+
+	// Every missing field is reported at once, with the API's messages.
+	checkOutput(&diags, path.Root("output"), `{"kind":"audio","container":{"format":"mp3"},"audio":{"handling":"encode","codec":"mp3"}}`)
+	var details []string
+	for _, d := range diags.Errors() {
+		details = append(details, d.Detail())
+	}
+	want := []string{
+		"output.privacy is required: give privacy.preset (strip_all, strip_location or keep_all), or all of location, capture_time, device and descriptive.",
+		"output.audio.bitrate is required when kind is video or audio and audio.handling is auto or encode and audio.codec is opus, mp3 or aac.",
+		"output.audio.channels is required when kind is video or audio and audio.handling is auto or encode.",
+		"output.audio.he_aac is required when kind is video or audio and audio.handling is auto or encode.",
+	}
+	if !reflect.DeepEqual(details, want) {
+		t.Fatalf("details = %q", details)
+	}
+
+	// A v1 spec (no kind) is refused: the provider speaks v2.
+	diags = nil
+	checkOutput(&diags, path.Root("output"), `{"mode":"hls","codec":"h264"}`)
+	if len(diags.Errors()) != 1 || !strings.Contains(diags.Errors()[0].Detail(), "output.kind is required") {
+		t.Fatalf("v1: %v", diags)
+	}
+}
+
+func TestAutomationOverridesKeepNull(t *testing.T) {
+	// A null in the overrides removes the preset's field, so it must reach the API as null.
+	m := automationModel{
+		Name: types.StringValue("x"), Enabled: types.BoolValue(true), Trigger: types.StringValue("watch"),
+		PollIntervalSeconds: types.Int64Value(300), SettleSeconds: types.Int64Value(60),
+		AfterSuccess: types.StringValue("keep"), Priority: types.StringValue("normal"),
+		Source:              &automationSourceModel{ConnectionID: types.StringValue("con_1"), Prefix: types.StringNull(), Pattern: types.StringNull()},
+		Preset:              types.StringValue("hls-h264-abr@1"),
+		Output:              jsontypes.NewNormalizedValue(`{"container":{"format":"mp4","segment_seconds":null},"video":{"gop":{"seconds":2}}}`),
+		TriggerConnectionID: types.StringNull(), WebhookURL: types.StringNull(), Metadata: types.MapNull(types.StringType),
+	}
+	var diags diag.Diagnostics
+	body, err := json.Marshal(m.params(context.Background(), nil, &diags))
+	if err != nil || diags.HasError() {
+		t.Fatal(err, diags)
+	}
+	var sent map[string]any
+	_ = json.Unmarshal(body, &sent)
+	got, _ := json.Marshal(sent["output"])
+	if !jsonEqual(string(got), `{"container":{"format":"mp4","segment_seconds":null},"video":{"gop":{"seconds":2}}}`) {
+		t.Fatalf("output sent = %s", got)
+	}
+	if sent["preset"] != "hls-h264-abr@1" {
+		t.Fatalf("preset sent = %v", sent["preset"])
+	}
+}
+
+func TestErrorDetailListsEveryProblem(t *testing.T) {
+	e := &transcdr.Error{
+		Status: 422, Type: "invalid_request_error", Code: "validation_failed",
+		Param: "output.audio.bitrate", Message: "output.audio.bitrate is required.",
+		Errors: []transcdr.FieldError{
+			{Param: "output.audio.bitrate", Message: "output.audio.bitrate is required."},
+			{Param: "output.privacy", Message: "output.privacy is required."},
+		},
+	}
+	d := errorDetail(e)
+	if !strings.Contains(d, "  - output.audio.bitrate: output.audio.bitrate is required.") || !strings.Contains(d, "  - output.privacy: output.privacy is required.") {
+		t.Fatalf("detail = %s", d)
 	}
 }
 

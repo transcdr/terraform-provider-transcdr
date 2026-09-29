@@ -71,6 +71,12 @@ func errorDetail(e *transcdr.Error) string {
 				fmt.Fprintf(&b, "\n  - %s: %s", field, msg)
 			}
 		}
+	} else if len(e.Errors) > 1 {
+		// An output spec refused: every problem, in the API's order.
+		b.WriteString("\n\nEvery problem:")
+		for _, fe := range e.Errors {
+			fmt.Fprintf(&b, "\n  - %s: %s", fe.Param, fe.Message)
+		}
 	} else if e.Param != "" {
 		fmt.Fprintf(&b, "\n\nField: %s", e.Param)
 	}

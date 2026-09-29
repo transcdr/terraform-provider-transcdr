@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
@@ -40,6 +41,7 @@ type presetModel struct {
 	Description    types.String         `tfsdk:"description"`
 	Output         jsontypes.Normalized `tfsdk:"output"`
 	Metadata       types.Map            `tfsdk:"metadata"`
+	Version        types.Int64          `tfsdk:"version"`
 	ResolvedOutput types.String         `tfsdk:"resolved_output"`
 }
 
@@ -49,10 +51,13 @@ func (r *presetResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *presetResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A custom preset: a named output specification that jobs and automations use by id or slug.\n\n" +
-			"`output` is the specification you want, written as JSON and merged over the defaults (`mode`, `codec`, `renditions` or `ladder`, " +
-			"`quality` including `target = \"cbr\"` with `bitrate` and `buffer_ms`, `gop`, `segment_seconds`, `audio`, `subtitles`, `color`, `bit_depth`, `max_fps`, `filters`, `trim`). " +
-			"Terraform compares only the fields you set against the preset's resolved specification (in `resolved_output`), so defaults filled in by the API are not drift.",
+		MarkdownDescription: "A custom preset: a named output specification that jobs and automations use by id or slug, or `<slug>@<version>` to pin a version.\n\n" +
+			"`output` is the whole specification (output spec v2), written as JSON: `kind` (`video`, `audio` or `image`) and every field that kind, its container, codec and audio handling need " +
+			"(`container`, `video`, `audio`, `image`, `renditions`, `subtitles`, `trim`, `privacy`). Nothing has a default; a value that follows the source is written out " +
+			"(`\"source\"`, `\"standard\"`, `\"from_color\"`, `\"by_size\"`, `\"poster\"`, `\"segment\"`). A missing field is reported at plan time, every one at once.\n\n" +
+			"Presets are versioned: a changed `output` adds a version (`version`), and earlier versions never change. " +
+			"Terraform compares the fields you set against the preset's resolved specification (in `resolved_output`): a privacy preset matches the four categories it stands for, " +
+			"and values the API writes out beside yours (each size's effective rate) are not drift.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -77,13 +82,17 @@ func (r *presetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"output": schema.StringAttribute{
 				CustomType: jsontypes.NormalizedType{},
 				Required:   true,
-				MarkdownDescription: "The output specification as JSON (`jsonencode({...})`), merged over the defaults and validated against the plan's limits. " +
-					"Every change updates the preset in place: the whole specification is sent again, so a field removed here goes back to its default.",
+				MarkdownDescription: "The whole output specification as JSON (`jsonencode({...})`), sent as written and validated against the plan's limits. " +
+					"Every change updates the preset in place, as a new version.",
 			},
 			"metadata": schema.MapAttribute{
 				Optional:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Up to 20 string keys (≤ 40 characters) with string values (≤ 500).",
+			},
+			"version": schema.Int64Attribute{
+				Computed:            true,
+				MarkdownDescription: "The preset's latest version. A changed `output` adds one; pin it with `\"${transcdr_preset.x.slug}@${transcdr_preset.x.version}\"`.",
 			},
 			"resolved_output": schema.StringAttribute{
 				Computed:            true,
@@ -105,7 +114,7 @@ var presetParams = func(param string) (path.Path, bool) {
 	case "":
 		return path.Root("output"), true
 	}
-	// Specification errors name the spec field (`renditions.0.width`, `quality.bitrate`).
+	// Specification errors name the spec field (`output.renditions.sizes.0.width`).
 	return path.Root("output"), true
 }
 
@@ -119,7 +128,9 @@ func (r *presetResource) ValidateConfig(ctx context.Context, req resource.Valida
 	if json.Unmarshal([]byte(output.ValueString()), &v) == nil {
 		if _, ok := v.(map[string]any); !ok {
 			resp.Diagnostics.AddAttributeError(path.Root("output"), "Invalid output", "output must be a JSON object.")
+			return
 		}
+		checkOutput(&resp.Diagnostics, path.Root("output"), output.ValueString())
 	}
 }
 
@@ -133,9 +144,10 @@ func (r *presetResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 	if resp.Diagnostics.HasError() || !known(plan.Output) || !known(state.Output) {
 		return
 	}
-	// The resolved specification changes only with the output.
+	// The version and the resolved specification change only with the output.
 	if jsonEqual(plan.Output.ValueString(), state.Output.ValueString()) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("resolved_output"), state.ResolvedOutput)...)
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("version"), state.Version)...)
 	}
 }
 
@@ -145,22 +157,27 @@ func (r *presetResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	params := transcdr.PresetCreateParams{
+	params := presetWrite{
 		Name:        plan.Name.ValueString(),
 		Slug:        ptr(plan.Slug),
-		Description: transcdr.String(plan.Description.ValueString()),
-		Output:      transcdr.RawOutputSpec([]byte(plan.Output.ValueString())),
+		Description: plan.Description.ValueString(),
+		Output:      json.RawMessage(plan.Output.ValueString()),
 	}
 	if known(plan.Metadata) {
 		params.Metadata = mapStrings(ctx, plan.Metadata, &resp.Diagnostics)
 	}
-	p, err := r.client.Presets.Create(ctx, &params)
+	checkOutput(&resp.Diagnostics, path.Root("output"), plan.Output.ValueString())
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	var p transcdr.Preset
+	err := r.client.Do(ctx, "POST", "/v1/presets", &params, &p, transcdr.WithIdempotencyKey(transcdr.NewIdempotencyKey()))
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not create the preset", err, presetParams)
 		return
 	}
 	state := plan
-	state.fromAPI(p, &plan, true)
+	state.fromAPI(&p, &plan, true)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -195,24 +212,29 @@ func (r *presetResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// PUT replaces the whole preset: the output is merged over the defaults, not over the stored
-	// specification, so a field removed from the configuration goes back to its default.
-	params := transcdr.PresetReplaceParams{
+	// PUT replaces the whole preset: the output is the whole specification, and a changed one is a
+	// new version.
+	params := presetWrite{
 		Name:        plan.Name.ValueString(),
 		Slug:        ptr(plan.Slug),
 		Description: plan.Description.ValueString(),
-		Output:      transcdr.RawOutputSpec([]byte(plan.Output.ValueString())),
+		Output:      json.RawMessage(plan.Output.ValueString()),
 	}
 	if known(plan.Metadata) {
 		params.Metadata = mapStrings(ctx, plan.Metadata, &resp.Diagnostics)
 	}
-	p, err := r.client.Presets.Replace(ctx, state.ID.ValueString(), &params)
+	checkOutput(&resp.Diagnostics, path.Root("output"), plan.Output.ValueString())
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	var p transcdr.Preset
+	err := r.client.Do(ctx, "PUT", "/v1/presets/"+url.PathEscape(state.ID.ValueString()), &params, &p)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Could not update the preset", err, presetParams)
 		return
 	}
 	next := plan
-	next.fromAPI(p, &plan, true)
+	next.fromAPI(&p, &plan, true)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
 
@@ -230,6 +252,16 @@ func (r *presetResource) Delete(ctx context.Context, req resource.DeleteRequest,
 // ImportState takes a preset id (`pre_…`) or the organization's slug for it.
 func (r *presetResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// presetWrite is a preset create (POST) or replace (PUT) with the output sent exactly as written:
+// through the SDK's typed spec, fields it does not know would be dropped and show as drift.
+type presetWrite struct {
+	Name        string            `json:"name"`
+	Slug        *string           `json:"slug,omitempty"`
+	Description string            `json:"description"`
+	Output      json.RawMessage   `json:"output"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // fromAPI copies a preset from the API. Right after a write, output stays as configured (the API
@@ -252,5 +284,6 @@ func (m *presetModel) fromAPI(p *transcdr.Preset, prior *presetModel, afterWrite
 		m.Output = jsontypes.NewNormalizedValue(compactJSON(p.Output.Raw()))
 	}
 	m.Metadata = metadataValue(prior.Metadata, p.Metadata)
+	m.Version = types.Int64Value(int64(p.Version))
 	m.ResolvedOutput = types.StringValue(compactJSON(p.Output.Raw()))
 }

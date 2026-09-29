@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework-timetypes v0.5.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-testing v1.14.1
-	github.com/transcdr/transcdr-sdk-go v0.3.0
+	github.com/transcdr/transcdr-sdk-go v0.9.1-0.20260929143608-5ae8bbb49d8b
 )
 
 require (

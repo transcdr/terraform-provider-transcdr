@@ -13,13 +13,13 @@ concurrency:
 permissions:
   contents: read
 
-# Our own runners (transcdr-infra/runners). Acceptance tests need a Transcdr API
+# GitHub-hosted runners: this repository is public. Acceptance tests need a Transcdr API
 # and LocalStack, so they run locally: scripts/testacc-up.sh, scripts/testacc.sh.
 
 jobs:
   go:
     name: go (fmt, vet, test, build)
-    runs-on: transcdr-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +44,7 @@ jobs:
 
   terraform:
     name: examples and docs
-    runs-on: transcdr-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

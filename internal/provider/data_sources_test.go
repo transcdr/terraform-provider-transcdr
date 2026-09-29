@@ -38,12 +38,20 @@ data "transcdr_connection" "by_id" {
 }
 
 resource "transcdr_preset" "own" {
-  name   = "tfacc lookup %[1]s"
-  output = jsonencode({ codec = "h265" })
+  name = "tfacc lookup %[1]s"
+  # A system preset's spec with another codec: output spec v2 nests it in video.
+  output = jsonencode(merge(jsondecode(data.transcdr_preset.system.output), {
+    video = merge(jsondecode(data.transcdr_preset.system.output).video, { codec = "h264" })
+  }))
 }
 
 data "transcdr_preset" "own" {
   id = transcdr_preset.own.id
+}
+
+data "transcdr_preset" "pinned" {
+  slug    = "hls-av1-abr"
+  version = 1
 }
 `, suffix),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -54,7 +62,10 @@ data "transcdr_preset" "own" {
 
 					resource.TestCheckResourceAttr("data.transcdr_preset.system", "id", "hls-av1-abr"),
 					resource.TestCheckResourceAttr("data.transcdr_preset.system", "system", "true"),
-					resource.TestMatchResourceAttr("data.transcdr_preset.system", "output", regexp.MustCompile(`"mode":"hls"`)),
+					resource.TestMatchResourceAttr("data.transcdr_preset.system", "output", regexp.MustCompile(`"format":"hls"`)),
+					resource.TestCheckResourceAttrSet("data.transcdr_preset.system", "version"),
+					resource.TestCheckResourceAttr("data.transcdr_preset.pinned", "version", "1"),
+					resource.TestMatchResourceAttr("data.transcdr_preset.pinned", "output", regexp.MustCompile(`"kind":"video"`)),
 
 					resource.TestCheckResourceAttrPair("data.transcdr_connection.by_name", "id", "transcdr_connection.hook", "id"),
 					resource.TestCheckResourceAttr("data.transcdr_connection.by_name", "kind", "webhook"),
@@ -62,7 +73,8 @@ data "transcdr_preset" "own" {
 					resource.TestCheckResourceAttrPair("data.transcdr_connection.by_id", "name", "transcdr_connection.hook", "name"),
 
 					resource.TestCheckResourceAttr("data.transcdr_preset.own", "system", "false"),
-					resource.TestMatchResourceAttr("data.transcdr_preset.own", "output", regexp.MustCompile(`"codec":"h265"`)),
+					resource.TestMatchResourceAttr("data.transcdr_preset.own", "output", regexp.MustCompile(`"codec":"h264"`)),
+					resource.TestCheckResourceAttr("data.transcdr_preset.own", "version", "1"),
 				),
 			},
 		},
