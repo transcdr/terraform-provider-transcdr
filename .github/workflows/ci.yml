@@ -19,7 +19,7 @@ permissions:
 jobs:
   go:
     name: go (fmt, vet, test, build)
-    runs-on: transcdr-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +44,7 @@ jobs:
 
   terraform:
     name: examples and docs
-    runs-on: transcdr-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
